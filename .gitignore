@@ -1,0 +1,22 @@
+# Build output
+artifacts/
+bin/
+obj/
+*.user
+*.suo
+*.cache
+
+# Visual Studio
+.vs/
+TestResults/
+
+# Local policy and samples
+test-data/
+test-data-visual/
+*.tmp
+*.log
+
+# OS files
+Thumbs.db
+Desktop.ini
+.DS_Store
