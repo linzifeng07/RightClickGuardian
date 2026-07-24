@@ -49,6 +49,7 @@ $arguments = @(
     '/platform:anycpu',
     '/optimize+',
     '/langversion:5',
+    '/codepage:65001',
     ('/out:' + $application),
     ('/win32manifest:' + (Join-Path $sourceRoot 'app.manifest')),
     ('/win32icon:' + (Join-Path $sourceRoot 'RightClickGuardian.ico'))
@@ -92,6 +93,7 @@ function Build-TestHarness {
         '/platform:anycpu',
         '/optimize+',
         '/langversion:5',
+        '/codepage:65001',
         ('/out:' + $testOutput)
     ) + $testReferences + @($testSource)
     & $compiler @testArguments
