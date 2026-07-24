@@ -53,12 +53,12 @@ namespace RightClickGuardian
             Directory.CreateDirectory(LabDirectory);
             if (sample.IsFolder)
             {
-                string folder = Path.Combine(LabDirectory, "测试文件夹");
+                string folder = Path.Combine(LabDirectory, "TestFolder");
                 Directory.CreateDirectory(folder);
                 return folder;
             }
             string extension = NormalizeExtension(sample.Extension);
-            string path = Path.Combine(LabDirectory, "右键测试" + extension);
+            string path = Path.Combine(LabDirectory, "RightClickTest" + extension);
             if (extension.Equals(".lnk", StringComparison.OrdinalIgnoreCase))
             {
                 CreateShortcut(path);
@@ -148,7 +148,7 @@ namespace RightClickGuardian
             dynamic shortcut = shell.CreateShortcut(path);
             shortcut.TargetPath = Path.Combine(Environment.SystemDirectory, "notepad.exe");
             shortcut.WorkingDirectory = Environment.SystemDirectory;
-            shortcut.Description = "右键守护喵测试快捷方式";
+            shortcut.Description = "RightClickGuardian test shortcut";
             shortcut.Save();
         }
     }
