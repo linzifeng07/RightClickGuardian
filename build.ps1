@@ -13,10 +13,10 @@ if (-not (Test-Path -LiteralPath $compiler)) {
     $compiler = Join-Path $env:WINDIR 'Microsoft.NET\Framework\v4.0.30319\csc.exe'
 }
 if (-not (Test-Path -LiteralPath $compiler)) {
-    throw '找不到 .NET Framework C# 编译器。'
+    throw 'The .NET Framework C# compiler was not found.'
 }
 if (-not (Test-Path -LiteralPath $referenceRoot)) {
-    throw '请安装 .NET Framework 4.8 Developer Pack。'
+    throw 'Install the .NET Framework 4.8 Developer Pack.'
 }
 
 New-Item -ItemType Directory -Path $artifactRoot -Force | Out-Null
@@ -56,7 +56,7 @@ $arguments = @(
 
 & $compiler @arguments
 if ($LASTEXITCODE -ne 0) {
-    throw '应用程序编译失败。'
+    throw 'Application compilation failed.'
 }
 
 Write-Host ('Built: ' + $application)
@@ -96,12 +96,12 @@ function Build-TestHarness {
     ) + $testReferences + @($testSource)
     & $compiler @testArguments
     if ($LASTEXITCODE -ne 0) {
-        throw ($Name + ' 编译失败。')
+        throw ($Name + ' compilation failed.')
     }
 
     & $testOutput
     if ($LASTEXITCODE -ne 0) {
-        throw ($Name + ' 测试失败。')
+        throw ($Name + ' tests failed.')
     }
 }
 
