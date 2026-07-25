@@ -15,6 +15,21 @@ namespace RightClickGuardian
 {
     public sealed class MainWindow : Window
     {
+        private sealed class NavigationState
+        {
+            public string Category;
+            public string SoftwareKey;
+            public double VerticalOffset;
+
+            public NavigationState(string category, string softwareKey,
+                double verticalOffset)
+            {
+                Category = category ?? "";
+                SoftwareKey = softwareKey ?? "";
+                VerticalOffset = Math.Max(0, verticalOffset);
+            }
+        }
+
         private static readonly Color Accent = Color.FromRgb(124, 119, 255);
         private static readonly Color AccentDark = Color.FromRgb(91, 84, 220);
         private static readonly Color Pink = Color.FromRgb(255, 143, 181);
@@ -40,6 +55,8 @@ namespace RightClickGuardian
         private SoftwareGroup currentSoftwareGroup;
         private string selectedSoftwareKey;
         private readonly HashSet<string> selectedSoftwareEntryIds;
+        private readonly Stack<NavigationState> backNavigationHistory;
+        private readonly Stack<NavigationState> forwardNavigationHistory;
         private int renderedEntryCount;
         private bool resettingEntries;
         private bool appendingEntries;
@@ -78,6 +95,8 @@ namespace RightClickGuardian
             selectedSoftwareKey = "";
             selectedSoftwareEntryIds = new HashSet<string>(
                 StringComparer.OrdinalIgnoreCase);
+            backNavigationHistory = new Stack<NavigationState>();
+            forwardNavigationHistory = new Stack<NavigationState>();
             selectedCategory = "";
             searchDebounce = new DispatcherTimer();
             searchDebounce.Interval = TimeSpan.FromMilliseconds(180);
@@ -98,6 +117,7 @@ namespace RightClickGuardian
             Background = new SolidColorBrush(Page);
             FontFamily = new FontFamily("Microsoft YaHei UI");
             Foreground = new SolidColorBrush(Ink);
+            PreviewMouseDown += OnPreviewMouseButtonDown;
 
             BuildUi();
             SourceInitialized += delegate { NativeMethods.ApplyRoundedCorners(this); };
@@ -175,7 +195,7 @@ namespace RightClickGuardian
             name.VerticalAlignment = VerticalAlignment.Center;
             brand.Children.Add(name);
             TextBlock version = new TextBlock();
-            version.Text = "  v1.2";
+            version.Text = "  v1.2.1";
             version.Foreground = new SolidColorBrush(Muted);
             version.FontSize = 11;
             version.VerticalAlignment = VerticalAlignment.Center;
@@ -365,20 +385,13 @@ namespace RightClickGuardian
                         StringComparison.OrdinalIgnoreCase) &&
                         !string.IsNullOrWhiteSpace(selectedSoftwareKey))
                     {
-                        selectedSoftwareKey = "";
-                        selectedSoftwareEntryIds.Clear();
-                        RenderEntries();
+                        NavigateTo(CategoryNames.Software, "");
                         return;
                     }
                     listScroll.ScrollToTop();
                     return;
                 }
-                selectedCategory = nextCategory;
-                selectedSoftwareKey = "";
-                selectedSoftwareEntryIds.Clear();
-                searchDebounce.Stop();
-                UpdateNavSelection();
-                RenderEntries();
+                NavigateTo(nextCategory, "");
             };
             panel.Children.Add(button);
             navButtons[category] = button;
@@ -688,6 +701,118 @@ namespace RightClickGuardian
             }
         }
 
+        private void OnPreviewMouseButtonDown(object sender, MouseButtonEventArgs e)
+        {
+            if (e.ChangedButton == MouseButton.XButton1)
+            {
+                e.Handled = true;
+                if (NavigateBack())
+                    SetStatus("鼠标侧键：已返回“" + CurrentNavigationTitle() + "”", true);
+                else
+                    SetStatus("已经是最早打开的页面啦", true);
+                return;
+            }
+            if (e.ChangedButton == MouseButton.XButton2)
+            {
+                e.Handled = true;
+                if (NavigateForward())
+                    SetStatus("鼠标侧键：已前进到“" + CurrentNavigationTitle() + "”", true);
+                else
+                    SetStatus("前面暂时没有页面啦", true);
+            }
+        }
+
+        private void NavigateTo(string category, string softwareKey)
+        {
+            NavigationState current = CaptureNavigationState();
+            NavigationState next = new NavigationState(category,
+                string.Equals(category, CategoryNames.Software,
+                    StringComparison.OrdinalIgnoreCase) ? softwareKey : "", 0);
+            if (SameNavigationPage(current, next))
+            {
+                if (listScroll != null) listScroll.ScrollToTop();
+                return;
+            }
+            PushNavigationState(backNavigationHistory, current);
+            forwardNavigationHistory.Clear();
+            ApplyNavigationState(next);
+        }
+
+        private bool NavigateBack()
+        {
+            if (backNavigationHistory.Count == 0) return false;
+            NavigationState current = CaptureNavigationState();
+            NavigationState previous = backNavigationHistory.Pop();
+            PushNavigationState(forwardNavigationHistory, current);
+            ApplyNavigationState(previous);
+            return true;
+        }
+
+        private bool NavigateForward()
+        {
+            if (forwardNavigationHistory.Count == 0) return false;
+            NavigationState current = CaptureNavigationState();
+            NavigationState next = forwardNavigationHistory.Pop();
+            PushNavigationState(backNavigationHistory, current);
+            ApplyNavigationState(next);
+            return true;
+        }
+
+        private NavigationState CaptureNavigationState()
+        {
+            return new NavigationState(selectedCategory, selectedSoftwareKey,
+                listScroll == null ? 0 : listScroll.VerticalOffset);
+        }
+
+        private void ApplyNavigationState(NavigationState state)
+        {
+            selectedCategory = state == null ? "" : state.Category;
+            selectedSoftwareKey = state == null ? "" : state.SoftwareKey;
+            selectedSoftwareEntryIds.Clear();
+            searchDebounce.Stop();
+            UpdateNavSelection();
+            RenderEntries();
+            double offset = state == null ? 0 : state.VerticalOffset;
+            if (offset <= 0 || listScroll == null) return;
+            Dispatcher.BeginInvoke(new Action(delegate
+            {
+                if (listScroll != null)
+                    listScroll.ScrollToVerticalOffset(offset);
+            }), DispatcherPriority.ContextIdle);
+        }
+
+        private string CurrentNavigationTitle()
+        {
+            if (categoryTitle != null &&
+                !string.IsNullOrWhiteSpace(categoryTitle.Text))
+                return categoryTitle.Text;
+            return string.IsNullOrWhiteSpace(selectedCategory)
+                ? "全部右键菜单" : selectedCategory;
+        }
+
+        private static bool SameNavigationPage(NavigationState left,
+            NavigationState right)
+        {
+            if (left == null || right == null) return false;
+            return string.Equals(left.Category, right.Category,
+                       StringComparison.OrdinalIgnoreCase) &&
+                   string.Equals(left.SoftwareKey, right.SoftwareKey,
+                       StringComparison.OrdinalIgnoreCase);
+        }
+
+        private static void PushNavigationState(Stack<NavigationState> history,
+            NavigationState state)
+        {
+            if (history == null || state == null) return;
+            history.Push(state);
+            if (history.Count <= 64) return;
+            NavigationState[] newestFirst = history.ToArray();
+            history.Clear();
+            for (int index = Math.Min(64, newestFirst.Length) - 1;
+                 index >= 0; index--)
+                history.Push(newestFirst[index]);
+        }
+
         private void RenderEntries()
         {
             if (itemsPanel == null) return;
@@ -945,9 +1070,7 @@ namespace RightClickGuardian
             card.Content = content;
             card.Click += delegate
             {
-                selectedSoftwareKey = group.Key;
-                selectedSoftwareEntryIds.Clear();
-                RenderEntries();
+                NavigateTo(CategoryNames.Software, group.Key);
             };
             return card;
         }
@@ -1047,9 +1170,7 @@ namespace RightClickGuardian
             back.Height = 32;
             back.Click += delegate
             {
-                selectedSoftwareKey = "";
-                selectedSoftwareEntryIds.Clear();
-                RenderEntries();
+                NavigateTo(CategoryNames.Software, "");
             };
             Grid.SetColumn(back, 1);
             top.Children.Add(back);

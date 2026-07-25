@@ -110,6 +110,12 @@ function Build-TestHarness {
 Build-TestHarness 'IntegrationHarness' @()
 Build-TestHarness 'ScanHarness' @()
 Build-TestHarness 'SoftwareCatalogHarness' @()
+Build-TestHarness 'NavigationHarness' @(
+    'PresentationCore.dll',
+    'PresentationFramework.dll',
+    'WindowsBase.dll',
+    'System.Xaml.dll'
+)
 Build-TestHarness 'UiPerformanceHarness' @(
     'PresentationCore.dll',
     'PresentationFramework.dll',
