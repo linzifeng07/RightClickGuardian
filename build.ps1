@@ -116,6 +116,10 @@ Build-TestHarness 'NavigationHarness' @(
     'WindowsBase.dll',
     'System.Xaml.dll'
 )
+Build-TestHarness 'TrayVisualHarness' @(
+    'System.Drawing.dll',
+    'System.Windows.Forms.dll'
+)
 Build-TestHarness 'UiPerformanceHarness' @(
     'PresentationCore.dll',
     'PresentationFramework.dll',
