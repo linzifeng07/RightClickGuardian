@@ -24,6 +24,7 @@ namespace RightClickGuardian
         public const string ModernApps = "现代应用";
         public const string CommandStore = "命令仓库";
         public const string Lab = "右键实验室";
+        public const string Software = "软件专区";
 
         public static readonly string[] Ordered = new[]
         {

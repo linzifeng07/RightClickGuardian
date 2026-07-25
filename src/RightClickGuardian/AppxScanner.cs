@@ -214,6 +214,13 @@ namespace RightClickGuardian
             }
             if (string.Equals(packageName, "Microsoft.WindowsNotepad",
                 StringComparison.OrdinalIgnoreCase)) return "在记事本中编辑";
+            if (packageName.IndexOf("BandizipShellext",
+                StringComparison.OrdinalIgnoreCase) >= 0)
+            {
+                return id.IndexOf("Extension", StringComparison.OrdinalIgnoreCase) >= 0
+                    ? "Bandizip · 目录空白处菜单"
+                    : "Bandizip · 文件与文件夹菜单";
+            }
             if (packageName.IndexOf("WindowsTerminal", StringComparison.OrdinalIgnoreCase) >= 0)
                 return "Windows 终端 · 在此处打开";
             if (packageName.IndexOf("AMDRadeon", StringComparison.OrdinalIgnoreCase) >= 0)

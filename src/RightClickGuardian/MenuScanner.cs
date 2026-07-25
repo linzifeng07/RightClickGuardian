@@ -504,7 +504,8 @@ namespace RightClickGuardian
                 { "{E2BF9676-5F8F-435C-97EB-11607A5BEDF7}", "共享" },
                 { "{7BA4C740-9E81-11CF-99D3-00AA004AE837}", "发送到" },
                 { "{596AB062-B4D2-4215-9F74-E9109B0A8153}", "还原以前的版本" },
-                { "{CB3D0F55-BC2C-4C1A-85ED-23ED75B5106B}", "OneDrive 菜单" }
+                { "{CB3D0F55-BC2C-4C1A-85ED-23ED75B5106B}", "OneDrive 菜单" },
+                { "{5B69A6B4-393B-459C-8EBB-214237A9E7AC}", "Bandizip 经典右键菜单" }
             };
             string friendly;
             return known.TryGetValue((clsid ?? "").ToUpperInvariant(), out friendly)

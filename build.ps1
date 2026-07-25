@@ -109,6 +109,7 @@ function Build-TestHarness {
 
 Build-TestHarness 'IntegrationHarness' @()
 Build-TestHarness 'ScanHarness' @()
+Build-TestHarness 'SoftwareCatalogHarness' @()
 Build-TestHarness 'UiPerformanceHarness' @(
     'PresentationCore.dll',
     'PresentationFramework.dll',

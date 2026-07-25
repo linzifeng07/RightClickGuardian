@@ -25,6 +25,8 @@ internal static class UiPerformanceHarness
                 BindingFlags.Instance | BindingFlags.NonPublic);
             FieldInfo panelField = type.GetField("itemsPanel",
                 BindingFlags.Instance | BindingFlags.NonPublic);
+            FieldInfo categoryField = type.GetField("selectedCategory",
+                BindingFlags.Instance | BindingFlags.NonPublic);
 
             List<MenuEntry> entries = new List<MenuEntry>();
             for (int index = 0; index < 6000; index++)
@@ -37,6 +39,11 @@ internal static class UiPerformanceHarness
                     Source = "性能测试 · 静态命令",
                     Kind = EntryKind.StaticVerb,
                     IconHint = index % 12 == 0 ? "ext:.png" : "",
+                    Command = index % 5 == 0 ? @"D:\Bandizip\Bandizip.x64.exe" :
+                        index % 5 == 1 ? @"D:\Microsoft VS Code\Code.exe" :
+                        index % 5 == 2 ? "OneDrive shell extension" :
+                        index % 5 == 3 ? "Clipchamp context menu" :
+                        "Microsoft Defender context handler",
                     Enabled = true
                 });
             }
@@ -58,6 +65,15 @@ internal static class UiPerformanceHarness
             Console.WriteLine("appendMilliseconds=" + appendWatch.ElapsedMilliseconds);
             Console.WriteLine("afterAppendVisualElements=" + afterAppendElements);
 
+            categoryField.SetValue(window, CategoryNames.Software);
+            Stopwatch softwareWatch = Stopwatch.StartNew();
+            render.Invoke(window, null);
+            softwareWatch.Stop();
+            int softwareElements = panel.Children.Count;
+            Console.WriteLine("softwareMilliseconds=" + softwareWatch.ElapsedMilliseconds);
+            Console.WriteLine("softwareVisualElements=" + softwareElements);
+            categoryField.SetValue(window, "");
+
             Stopwatch realScanWatch = Stopwatch.StartNew();
             ScanResult realScan = new MenuScanner().Scan(new PolicyStore().Load());
             realScanWatch.Stop();
@@ -74,6 +90,8 @@ internal static class UiPerformanceHarness
 
             if (initialElements > 50 || initialElements < 48 ||
                 afterAppendElements > 86 || watch.ElapsedMilliseconds > 1500 ||
+                softwareElements > 2 || softwareElements == 0 ||
+                softwareWatch.ElapsedMilliseconds > 1500 ||
                 realInitialElements > 50 || realRenderWatch.ElapsedMilliseconds > 1500)
                 return 1;
             return 0;
