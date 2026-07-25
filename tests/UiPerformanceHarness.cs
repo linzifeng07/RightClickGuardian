@@ -27,6 +27,10 @@ internal static class UiPerformanceHarness
                 BindingFlags.Instance | BindingFlags.NonPublic);
             FieldInfo categoryField = type.GetField("selectedCategory",
                 BindingFlags.Instance | BindingFlags.NonPublic);
+            FieldInfo softwareField = type.GetField("selectedSoftwareKey",
+                BindingFlags.Instance | BindingFlags.NonPublic);
+            FieldInfo softwareCacheField = type.GetField("softwareGroupsCache",
+                BindingFlags.Instance | BindingFlags.NonPublic);
 
             List<MenuEntry> entries = new List<MenuEntry>();
             for (int index = 0; index < 6000; index++)
@@ -66,33 +70,57 @@ internal static class UiPerformanceHarness
             Console.WriteLine("afterAppendVisualElements=" + afterAppendElements);
 
             categoryField.SetValue(window, CategoryNames.Software);
+            softwareField.SetValue(window, "");
             Stopwatch softwareWatch = Stopwatch.StartNew();
             render.Invoke(window, null);
             softwareWatch.Stop();
             int softwareElements = panel.Children.Count;
             Console.WriteLine("softwareMilliseconds=" + softwareWatch.ElapsedMilliseconds);
             Console.WriteLine("softwareVisualElements=" + softwareElements);
+            softwareField.SetValue(window, "bandizip");
+            Stopwatch softwareDetailWatch = Stopwatch.StartNew();
+            render.Invoke(window, null);
+            softwareDetailWatch.Stop();
+            Console.WriteLine("softwareDetailMilliseconds=" +
+                              softwareDetailWatch.ElapsedMilliseconds);
             categoryField.SetValue(window, "");
+            softwareField.SetValue(window, "");
 
             Stopwatch realScanWatch = Stopwatch.StartNew();
             ScanResult realScan = new MenuScanner().Scan(new PolicyStore().Load());
             realScanWatch.Stop();
             entriesField.SetValue(window, realScan.Entries);
+            Stopwatch realGroupWatch = Stopwatch.StartNew();
+            List<SoftwareGroup> realGroups =
+                SoftwareCatalog.Build(realScan.Entries);
+            realGroupWatch.Stop();
+            softwareCacheField.SetValue(window, realGroups);
             Stopwatch realRenderWatch = Stopwatch.StartNew();
             render.Invoke(window, null);
             realRenderWatch.Stop();
             int realInitialElements = panel.Children.Count;
             Console.WriteLine("realEntries=" + realScan.Entries.Count);
             Console.WriteLine("realScanMilliseconds=" + realScanWatch.ElapsedMilliseconds);
+            Console.WriteLine("realSoftwarePrebuildMilliseconds=" +
+                              realGroupWatch.ElapsedMilliseconds);
             Console.WriteLine("realInitialRenderMilliseconds=" +
                               realRenderWatch.ElapsedMilliseconds);
             Console.WriteLine("realInitialVisualElements=" + realInitialElements);
+            categoryField.SetValue(window, CategoryNames.Software);
+            Stopwatch realSoftwareWatch = Stopwatch.StartNew();
+            render.Invoke(window, null);
+            realSoftwareWatch.Stop();
+            Console.WriteLine("realSoftwareClickMilliseconds=" +
+                              realSoftwareWatch.ElapsedMilliseconds);
 
             if (initialElements > 50 || initialElements < 48 ||
                 afterAppendElements > 86 || watch.ElapsedMilliseconds > 1500 ||
                 softwareElements > 2 || softwareElements == 0 ||
                 softwareWatch.ElapsedMilliseconds > 1500 ||
+                softwareDetailWatch.ElapsedMilliseconds > 500 ||
                 realInitialElements > 50 || realRenderWatch.ElapsedMilliseconds > 1500)
+                return 1;
+            if (realSoftwareWatch.ElapsedMilliseconds > 800)
                 return 1;
             return 0;
         }

@@ -30,6 +30,12 @@ namespace RightClickGuardian
             }
         }
 
+        private sealed class ScanBundle
+        {
+            public ScanResult Result;
+            public List<SoftwareGroup> SoftwareGroups;
+        }
+
         private static readonly Color Accent = Color.FromRgb(124, 119, 255);
         private static readonly Color AccentDark = Color.FromRgb(91, 84, 220);
         private static readonly Color Pink = Color.FromRgb(255, 143, 181);
@@ -53,6 +59,7 @@ namespace RightClickGuardian
         private LabSample selectedLabSample;
         private List<MenuEntry> currentEntries;
         private SoftwareGroup currentSoftwareGroup;
+        private List<SoftwareGroup> softwareGroupsCache;
         private string selectedSoftwareKey;
         private readonly HashSet<string> selectedSoftwareEntryIds;
         private readonly Stack<NavigationState> backNavigationHistory;
@@ -60,6 +67,7 @@ namespace RightClickGuardian
         private int renderedEntryCount;
         private bool resettingEntries;
         private bool appendingEntries;
+        private int iconLoadGeneration;
         private readonly DispatcherTimer searchDebounce;
         private TextBlock loadHint;
         private TextBlock softwareSelectionText;
@@ -195,7 +203,7 @@ namespace RightClickGuardian
             name.VerticalAlignment = VerticalAlignment.Center;
             brand.Children.Add(name);
             TextBlock version = new TextBlock();
-            version.Text = "  v1.2.2";
+            version.Text = "  v1.2.3";
             version.Foreground = new SolidColorBrush(Muted);
             version.FontSize = 11;
             version.VerticalAlignment = VerticalAlignment.Center;
@@ -677,9 +685,18 @@ namespace RightClickGuardian
             try
             {
                 PolicyDocument policy = policyStore.Load();
-                ScanResult result = await Task.Run(delegate { return scanner.Scan(policy); });
-                lastScan = result;
-                allEntries = result.Entries;
+                ScanBundle bundle = await Task.Run(delegate
+                {
+                    ScanResult scanResult = scanner.Scan(policy);
+                    return new ScanBundle
+                    {
+                        Result = scanResult,
+                        SoftwareGroups = SoftwareCatalog.Build(scanResult.Entries)
+                    };
+                });
+                lastScan = bundle.Result;
+                allEntries = bundle.Result.Entries;
+                softwareGroupsCache = bundle.SoftwareGroups;
                 watch.Stop();
                 UpdateCounts();
                 RenderEntries();
@@ -817,6 +834,7 @@ namespace RightClickGuardian
         {
             if (itemsPanel == null) return;
             resettingEntries = true;
+            unchecked { iconLoadGeneration++; }
             try
             {
                 itemsPanel.Children.Clear();
@@ -965,7 +983,7 @@ namespace RightClickGuardian
         private void RenderSoftwareZone()
         {
             string query = searchBox == null ? "" : (searchBox.Text ?? "").Trim();
-            List<SoftwareGroup> groups = SoftwareCatalog.Build(allEntries);
+            List<SoftwareGroup> groups = GetSoftwareGroups();
             if (string.IsNullOrWhiteSpace(selectedSoftwareKey))
             {
                 IEnumerable<SoftwareGroup> filtered = groups;
@@ -1093,28 +1111,17 @@ namespace RightClickGuardian
                     new GradientStop(Color.FromRgb(246, 245, 255), 0),
                     new GradientStop(Color.FromRgb(237, 246, 255), 1)
                 }, 45);
-            ImageSource icon = group.IconEntry == null
-                ? null : IconResolver.Resolve(group.IconEntry);
-            if (icon != null)
-            {
-                Image image = new Image();
-                image.Source = icon;
-                image.Width = size - 19;
-                image.Height = size - 19;
-                image.Stretch = Stretch.Uniform;
-                tile.Child = image;
-            }
-            else
-            {
-                TextBlock letters = new TextBlock();
-                letters.Text = group.Abbreviation;
-                letters.FontSize = group.Abbreviation.Length > 2 ? 12 : 16;
-                letters.FontWeight = FontWeights.Bold;
-                letters.Foreground = new SolidColorBrush(AccentDark);
-                letters.HorizontalAlignment = HorizontalAlignment.Center;
-                letters.VerticalAlignment = VerticalAlignment.Center;
-                tile.Child = letters;
-            }
+            TextBlock letters = new TextBlock();
+            letters.Text = group.Abbreviation;
+            letters.FontSize = group.Abbreviation.Length > 2 ? 12 : 16;
+            letters.FontWeight = FontWeights.Bold;
+            letters.Foreground = new SolidColorBrush(AccentDark);
+            letters.HorizontalAlignment = HorizontalAlignment.Center;
+            letters.VerticalAlignment = VerticalAlignment.Center;
+            tile.Child = letters;
+            if (group.IconEntry != null)
+                QueueIconLoad(tile, group.IconEntry, size - 19,
+                    iconLoadGeneration);
             holder.Children.Add(tile);
 
             Border abbreviation = new Border();
@@ -1131,6 +1138,52 @@ namespace RightClickGuardian
             abbreviation.Child = shortName;
             holder.Children.Add(abbreviation);
             return holder;
+        }
+
+        private List<SoftwareGroup> GetSoftwareGroups()
+        {
+            if (softwareGroupsCache == null)
+                softwareGroupsCache = SoftwareCatalog.Build(allEntries);
+            return softwareGroupsCache;
+        }
+
+        private void QueueIconLoad(Border tile, MenuEntry entry,
+            double size, int generation)
+        {
+            if (tile == null || entry == null ||
+                string.IsNullOrWhiteSpace(entry.IconHint) &&
+                string.IsNullOrWhiteSpace(entry.FilePath)) return;
+            ImageSource cached;
+            if (IconResolver.TryGetCached(entry, out cached))
+            {
+                if (cached != null) SetResolvedIcon(tile, cached, size);
+                return;
+            }
+            IconResolver.ResolveAsync(entry).ContinueWith(delegate(Task<ImageSource> task)
+            {
+                if (task.IsCanceled || task.IsFaulted || task.Result == null) return;
+                ImageSource source = task.Result;
+                try
+                {
+                    Dispatcher.BeginInvoke(new Action(delegate
+                    {
+                        if (generation != iconLoadGeneration || tile == null) return;
+                        SetResolvedIcon(tile, source, size);
+                    }), DispatcherPriority.Background);
+                }
+                catch { }
+            });
+        }
+
+        private static void SetResolvedIcon(Border tile, ImageSource source,
+            double size)
+        {
+            Image image = new Image();
+            image.Source = source;
+            image.Width = size;
+            image.Height = size;
+            image.Stretch = Stretch.Uniform;
+            tile.Child = image;
         }
 
         private UIElement BuildSoftwareDetailHeader(SoftwareGroup group)
@@ -1647,25 +1700,13 @@ namespace RightClickGuardian
             iconTile.Background = new SolidColorBrush(Color.FromRgb(245, 245, 252));
             iconTile.VerticalAlignment = VerticalAlignment.Center;
             iconTile.HorizontalAlignment = HorizontalAlignment.Center;
-            ImageSource resolvedIcon = IconResolver.Resolve(entry);
-            if (resolvedIcon != null)
-            {
-                Image iconImage = new Image();
-                iconImage.Source = resolvedIcon;
-                iconImage.Width = 25;
-                iconImage.Height = 25;
-                iconImage.Stretch = Stretch.Uniform;
-                iconTile.Child = iconImage;
-            }
-            else
-            {
-                TextBlock fallbackIcon = new TextBlock();
-                fallbackIcon.Text = CategoryIcon(entry.Category);
-                fallbackIcon.FontSize = 18;
-                fallbackIcon.HorizontalAlignment = HorizontalAlignment.Center;
-                fallbackIcon.VerticalAlignment = VerticalAlignment.Center;
-                iconTile.Child = fallbackIcon;
-            }
+            TextBlock fallbackIcon = new TextBlock();
+            fallbackIcon.Text = CategoryIcon(entry.Category);
+            fallbackIcon.FontSize = 18;
+            fallbackIcon.HorizontalAlignment = HorizontalAlignment.Center;
+            fallbackIcon.VerticalAlignment = VerticalAlignment.Center;
+            iconTile.Child = fallbackIcon;
+            QueueIconLoad(iconTile, entry, 25, iconLoadGeneration);
             Grid.SetColumn(iconTile, 2);
             row.Children.Add(iconTile);
 
@@ -1826,7 +1867,7 @@ namespace RightClickGuardian
                 navCounts[""].Text = allEntries.Count.ToString();
             TextBlock softwareCount;
             if (navCounts.TryGetValue(CategoryNames.Software, out softwareCount))
-                softwareCount.Text = SoftwareCatalog.Build(allEntries).Count.ToString();
+                softwareCount.Text = GetSoftwareGroups().Count.ToString();
             foreach (string category in CategoryNames.Ordered)
             {
                 TextBlock count;
