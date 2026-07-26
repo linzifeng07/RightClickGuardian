@@ -25,7 +25,8 @@ internal static class TrayVisualHarness
         {
             if (bitmap.Width < 16 || bitmap.Height < 16)
                 return Fail("Tray icon is too small.");
-            int purplePixels = 0;
+            int pinkPixels = 0;
+            int lavenderPixels = 0;
             int coloredPixels = 0;
             for (int y = 0; y < bitmap.Height; y++)
             {
@@ -35,13 +36,17 @@ internal static class TrayVisualHarness
                     if (color.A == 0) continue;
                     if (color.R > 45 || color.G > 45 || color.B > 45)
                         coloredPixels++;
-                    if (color.B > color.R + 25 &&
-                        color.B > color.G + 35 && color.R > 70)
-                        purplePixels++;
+                    if (color.R > 135 && color.R > color.G + 18 &&
+                        color.R > color.B + 3)
+                        pinkPixels++;
+                    if (color.B > 110 && color.R > 95 &&
+                        color.B > color.G + 8 && color.R > color.G + 5)
+                        lavenderPixels++;
                 }
             }
-            if (coloredPixels < 40 || purplePixels < 8)
-                return Fail("The application brand icon was not loaded.");
+            if (coloredPixels < 40 || pinkPixels < 3 ||
+                lavenderPixels < 3)
+                return Fail("The pink-lavender mascot icon was not loaded.");
         }
 
         using (Bitmap badge = (Bitmap)buildBadge.Invoke(null,

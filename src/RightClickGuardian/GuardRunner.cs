@@ -57,7 +57,7 @@ namespace RightClickGuardian
         {
             ContextMenuStrip menu = new ContextMenuStrip();
             menu.BackColor = Color.White;
-            menu.ForeColor = Color.FromArgb(41, 48, 73);
+            menu.ForeColor = Color.FromArgb(68, 51, 65);
             menu.Font = new Font("Microsoft YaHei UI", 9F, FontStyle.Regular);
             menu.ImageScalingSize = new Size(20, 20);
             menu.MinimumSize = new Size(238, 0);
@@ -71,8 +71,8 @@ namespace RightClickGuardian
             menu.Items.Add(open);
 
             status = new ToolStripLabel();
-            status.ForeColor = Color.FromArgb(52, 167, 133);
-            status.Image = BuildBadgeImage(Color.FromArgb(80, 197, 160), "✓");
+            status.ForeColor = Color.FromArgb(91, 143, 126);
+            status.Image = BuildBadgeImage(Color.FromArgb(139, 190, 173), "✓");
             status.Padding = new Padding(3, 2, 3, 5);
             menu.Items.Add(status);
 
@@ -82,7 +82,7 @@ namespace RightClickGuardian
 
             ToolStripMenuItem enforce = new ToolStripMenuItem(
                 "立即检查并重新压制",
-                BuildBadgeImage(Color.FromArgb(124, 119, 255), "↻"),
+                BuildBadgeImage(Color.FromArgb(231, 111, 153), "↻"),
                 delegate { EnforceFromMenu(); });
             enforce.Padding = new Padding(3, 4, 3, 4);
             menu.Items.Add(enforce);
@@ -93,7 +93,7 @@ namespace RightClickGuardian
 
             ToolStripMenuItem exit = new ToolStripMenuItem(
                 "退出后台守护",
-                BuildBadgeImage(Color.FromArgb(255, 143, 181), "×"),
+                BuildBadgeImage(Color.FromArgb(246, 151, 181), "×"),
                 delegate { ExitGuard(); });
             exit.Padding = new Padding(3, 4, 3, 4);
             menu.Items.Add(exit);
@@ -206,27 +206,27 @@ namespace RightClickGuardian
         {
             public override Color MenuBorder
             {
-                get { return Color.FromArgb(225, 226, 238); }
+                get { return Color.FromArgb(235, 209, 219); }
             }
 
             public override Color MenuItemBorder
             {
-                get { return Color.FromArgb(214, 210, 255); }
+                get { return Color.FromArgb(242, 190, 210); }
             }
 
             public override Color MenuItemSelected
             {
-                get { return Color.FromArgb(238, 237, 255); }
+                get { return Color.FromArgb(255, 228, 238); }
             }
 
             public override Color MenuItemSelectedGradientBegin
             {
-                get { return Color.FromArgb(238, 237, 255); }
+                get { return Color.FromArgb(255, 228, 238); }
             }
 
             public override Color MenuItemSelectedGradientEnd
             {
-                get { return Color.FromArgb(246, 239, 255); }
+                get { return Color.FromArgb(247, 237, 248); }
             }
 
             public override Color ImageMarginGradientBegin
@@ -246,7 +246,7 @@ namespace RightClickGuardian
 
             public override Color SeparatorDark
             {
-                get { return Color.FromArgb(233, 234, 244); }
+                get { return Color.FromArgb(241, 222, 229); }
             }
 
             public override Color SeparatorLight

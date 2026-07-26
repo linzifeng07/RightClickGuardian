@@ -36,15 +36,15 @@ namespace RightClickGuardian
             public List<SoftwareGroup> SoftwareGroups;
         }
 
-        private static readonly Color Accent = Color.FromRgb(124, 119, 255);
-        private static readonly Color AccentDark = Color.FromRgb(91, 84, 220);
-        private static readonly Color Pink = Color.FromRgb(255, 143, 181);
-        private static readonly Color Mint = Color.FromRgb(80, 197, 160);
-        private static readonly Color Ink = Color.FromRgb(41, 48, 73);
-        private static readonly Color Muted = Color.FromRgb(119, 125, 151);
-        private static readonly Color Surface = Color.FromRgb(255, 255, 255);
-        private static readonly Color Page = Color.FromRgb(247, 248, 253);
-        private static readonly Color Line = Color.FromRgb(233, 234, 244);
+        private static readonly Color Accent = Color.FromRgb(231, 111, 153);
+        private static readonly Color AccentDark = Color.FromRgb(151, 73, 113);
+        private static readonly Color Pink = Color.FromRgb(246, 151, 181);
+        private static readonly Color Mint = Color.FromRgb(139, 190, 173);
+        private static readonly Color Ink = Color.FromRgb(68, 51, 65);
+        private static readonly Color Muted = Color.FromRgb(137, 116, 132);
+        private static readonly Color Surface = Color.FromRgb(255, 253, 252);
+        private static readonly Color Page = Color.FromRgb(255, 247, 249);
+        private static readonly Color Line = Color.FromRgb(241, 222, 229);
 
         private readonly PolicyStore policyStore;
         private readonly MenuScanner scanner;
@@ -122,6 +122,7 @@ namespace RightClickGuardian
             WindowStartupLocation = WindowStartupLocation.CenterScreen;
             WindowStyle = WindowStyle.None;
             ResizeMode = ResizeMode.CanResize;
+            Icon = ThemeAssets.MascotPortrait;
             Background = new SolidColorBrush(Page);
             FontFamily = new FontFamily("Microsoft YaHei UI");
             Foreground = new SolidColorBrush(Ink);
@@ -136,7 +137,7 @@ namespace RightClickGuardian
         {
             Border shell = new Border();
             shell.Background = new SolidColorBrush(Page);
-            shell.BorderBrush = new SolidColorBrush(Color.FromRgb(225, 226, 238));
+            shell.BorderBrush = new SolidColorBrush(Color.FromRgb(235, 209, 219));
             shell.BorderThickness = new Thickness(1);
 
             Grid root = new Grid();
@@ -182,18 +183,29 @@ namespace RightClickGuardian
             icon.Width = 30;
             icon.Height = 30;
             icon.CornerRadius = new CornerRadius(10);
-            icon.Background = new LinearGradientBrush(
-                new GradientStopCollection
-                {
-                    new GradientStop(Accent, 0),
-                    new GradientStop(Pink, 1)
-                }, 45);
-            TextBlock paw = new TextBlock();
-            paw.Text = "🐾";
-            paw.FontSize = 15;
-            paw.HorizontalAlignment = HorizontalAlignment.Center;
-            paw.VerticalAlignment = VerticalAlignment.Center;
-            icon.Child = paw;
+            icon.BorderBrush = new SolidColorBrush(Color.FromRgb(245, 190, 209));
+            icon.BorderThickness = new Thickness(1);
+            if (ThemeAssets.MascotPortrait != null)
+            {
+                ImageBrush portrait = new ImageBrush(ThemeAssets.MascotPortrait);
+                portrait.Stretch = Stretch.UniformToFill;
+                icon.Background = portrait;
+            }
+            else
+            {
+                icon.Background = new LinearGradientBrush(
+                    new GradientStopCollection
+                    {
+                        new GradientStop(Accent, 0),
+                        new GradientStop(Pink, 1)
+                    }, 45);
+                TextBlock fallback = new TextBlock();
+                fallback.Text = "♡";
+                fallback.FontSize = 16;
+                fallback.HorizontalAlignment = HorizontalAlignment.Center;
+                fallback.VerticalAlignment = VerticalAlignment.Center;
+                icon.Child = fallback;
+            }
             brand.Children.Add(icon);
             TextBlock name = new TextBlock();
             name.Text = "右键小守卫";
@@ -203,7 +215,7 @@ namespace RightClickGuardian
             name.VerticalAlignment = VerticalAlignment.Center;
             brand.Children.Add(name);
             TextBlock version = new TextBlock();
-            version.Text = "  v1.2.3";
+            version.Text = "  v1.3.0";
             version.Foreground = new SolidColorBrush(Muted);
             version.FontSize = 11;
             version.VerticalAlignment = VerticalAlignment.Center;
@@ -257,10 +269,10 @@ namespace RightClickGuardian
             helper.Margin = new Thickness(12, 14, 12, 8);
             helper.Padding = new Thickness(12);
             helper.CornerRadius = new CornerRadius(17);
-            helper.Background = new SolidColorBrush(Color.FromRgb(244, 243, 255));
+            helper.Background = new SolidColorBrush(Color.FromRgb(255, 237, 244));
             StackPanel helperContent = new StackPanel();
             TextBlock helperTitle = new TextBlock();
-            helperTitle.Text = "ฅ  菜单分类";
+            helperTitle.Text = "♡  菜单分类";
             helperTitle.FontWeight = FontWeights.SemiBold;
             helperTitle.FontSize = 14;
             helperContent.Children.Add(helperTitle);
@@ -310,7 +322,7 @@ namespace RightClickGuardian
             guardCard.Margin = new Thickness(12, 6, 12, 14);
             guardCard.Padding = new Thickness(12);
             guardCard.CornerRadius = new CornerRadius(16);
-            guardCard.Background = new SolidColorBrush(Color.FromRgb(239, 251, 247));
+            guardCard.Background = new SolidColorBrush(Color.FromRgb(241, 249, 246));
             Grid.SetRow(guardCard, 2);
             Grid guardGrid = new Grid();
             guardGrid.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
@@ -331,7 +343,7 @@ namespace RightClickGuardian
             guardWords.Children.Add(guardTitle);
             TextBlock guardHint = new TextBlock();
             guardHint.Text = "被软件写回时自动压制";
-            guardHint.Foreground = new SolidColorBrush(Color.FromRgb(73, 141, 120));
+            guardHint.Foreground = new SolidColorBrush(Color.FromRgb(91, 143, 126));
             guardHint.FontSize = 9.5;
             guardHint.Margin = new Thickness(0, 3, 0, 0);
             guardWords.Children.Add(guardHint);
@@ -441,9 +453,9 @@ namespace RightClickGuardian
             LinearGradientBrush gradient = new LinearGradientBrush();
             gradient.StartPoint = new Point(0, 0);
             gradient.EndPoint = new Point(1, 1);
-            gradient.GradientStops.Add(new GradientStop(Color.FromRgb(105, 101, 240), 0));
-            gradient.GradientStops.Add(new GradientStop(Color.FromRgb(146, 126, 255), 0.58));
-            gradient.GradientStops.Add(new GradientStop(Color.FromRgb(255, 172, 201), 1));
+            gradient.GradientStops.Add(new GradientStop(Color.FromRgb(139, 82, 132), 0));
+            gradient.GradientStops.Add(new GradientStop(Color.FromRgb(205, 104, 151), 0.55));
+            gradient.GradientStops.Add(new GradientStop(Color.FromRgb(242, 161, 186), 1));
             hero.Background = gradient;
 
             Grid grid = new Grid();
@@ -483,7 +495,7 @@ namespace RightClickGuardian
             safetyText.VerticalAlignment = VerticalAlignment.Center;
             safetyText.Margin = new Thickness(0, 0, 15, 0);
             TextBlock safeTitle = new TextBlock();
-            safeTitle.Text = "回写也不怕";
+            safeTitle.Text = "萌系强制守护";
             safeTitle.Foreground = Brushes.White;
             safeTitle.FontWeight = FontWeights.SemiBold;
             safeTitle.FontSize = 13;
@@ -499,34 +511,28 @@ namespace RightClickGuardian
             scanMascot = new Border();
             scanMascot.Width = 82;
             scanMascot.Height = 82;
-            scanMascot.CornerRadius = new CornerRadius(29);
-            scanMascot.Background = new SolidColorBrush(Color.FromArgb(55, 255, 255, 255));
-            scanMascot.BorderBrush = new SolidColorBrush(Color.FromArgb(90, 255, 255, 255));
-            scanMascot.BorderThickness = new Thickness(1);
-            Grid mascot = new Grid();
-            TextBlock cat = new TextBlock();
-            cat.Text = "🐱";
-            cat.FontSize = 42;
-            cat.HorizontalAlignment = HorizontalAlignment.Center;
-            cat.VerticalAlignment = VerticalAlignment.Center;
-            mascot.Children.Add(cat);
-            Border shield = new Border();
-            shield.Width = 28;
-            shield.Height = 28;
-            shield.CornerRadius = new CornerRadius(10);
-            shield.Background = Brushes.White;
-            shield.HorizontalAlignment = HorizontalAlignment.Right;
-            shield.VerticalAlignment = VerticalAlignment.Bottom;
-            TextBlock shieldText = new TextBlock();
-            shieldText.Text = "✓";
-            shieldText.FontSize = 15;
-            shieldText.FontWeight = FontWeights.Bold;
-            shieldText.Foreground = new SolidColorBrush(Mint);
-            shieldText.HorizontalAlignment = HorizontalAlignment.Center;
-            shieldText.VerticalAlignment = VerticalAlignment.Center;
-            shield.Child = shieldText;
-            mascot.Children.Add(shield);
-            scanMascot.Child = mascot;
+            scanMascot.CornerRadius = new CornerRadius(27);
+            scanMascot.BorderBrush = new SolidColorBrush(
+                Color.FromArgb(190, 255, 255, 255));
+            scanMascot.BorderThickness = new Thickness(2);
+            if (ThemeAssets.MascotPortrait != null)
+            {
+                ImageBrush portrait = new ImageBrush(
+                    ThemeAssets.MascotPortrait);
+                portrait.Stretch = Stretch.UniformToFill;
+                scanMascot.Background = portrait;
+            }
+            else
+            {
+                scanMascot.Background = new SolidColorBrush(
+                    Color.FromArgb(55, 255, 255, 255));
+                TextBlock fallback = new TextBlock();
+                fallback.Text = "♡";
+                fallback.FontSize = 38;
+                fallback.HorizontalAlignment = HorizontalAlignment.Center;
+                fallback.VerticalAlignment = VerticalAlignment.Center;
+                scanMascot.Child = fallback;
+            }
             mascotRow.Children.Add(scanMascot);
             mascotArea.Children.Add(mascotRow);
             grid.Children.Add(mascotArea);
@@ -601,7 +607,7 @@ namespace RightClickGuardian
             actions.Orientation = Orientation.Horizontal;
             actions.Margin = new Thickness(10, 0, 0, 0);
             Grid.SetColumn(actions, 1);
-            reportButton = RoundedButton("扫描报告", Color.FromRgb(240, 241, 249), Ink, 14);
+            reportButton = RoundedButton("扫描报告", Color.FromRgb(255, 237, 244), Ink, 14);
             reportButton.Height = 42;
             reportButton.Margin = new Thickness(0, 0, 8, 0);
             reportButton.Click += delegate { ShowReport(); };
@@ -1108,8 +1114,8 @@ namespace RightClickGuardian
             tile.Background = new LinearGradientBrush(
                 new GradientStopCollection
                 {
-                    new GradientStop(Color.FromRgb(246, 245, 255), 0),
-                    new GradientStop(Color.FromRgb(237, 246, 255), 1)
+                    new GradientStop(Color.FromRgb(255, 239, 245), 0),
+                    new GradientStop(Color.FromRgb(243, 239, 249), 1)
                 }, 45);
             TextBlock letters = new TextBlock();
             letters.Text = group.Abbreviation;
@@ -1189,7 +1195,7 @@ namespace RightClickGuardian
         private UIElement BuildSoftwareDetailHeader(SoftwareGroup group)
         {
             Border header = new Border();
-            header.Background = new SolidColorBrush(Color.FromRgb(244, 243, 255));
+            header.Background = new SolidColorBrush(Color.FromRgb(255, 237, 244));
             header.CornerRadius = new CornerRadius(20);
             header.Padding = new Thickness(17, 14, 17, 14);
             header.Margin = new Thickness(0, 5, 0, 12);
@@ -1219,7 +1225,7 @@ namespace RightClickGuardian
             title.Children.Add(softwareSelectionText);
             top.Children.Add(title);
             Button back = RoundedButton("← 返回软件列表",
-                Color.FromRgb(232, 231, 248), AccentDark, 11);
+                Color.FromRgb(248, 218, 230), AccentDark, 11);
             back.Height = 32;
             back.Click += delegate
             {
@@ -1233,7 +1239,7 @@ namespace RightClickGuardian
             actions.Orientation = Orientation.Horizontal;
             actions.Margin = new Thickness(0, 11, 0, 0);
             Button selectAll = RoundedButton("☑ 全选可关闭",
-                Color.FromRgb(232, 231, 248), AccentDark, 11);
+                Color.FromRgb(248, 218, 230), AccentDark, 11);
             selectAll.Height = 32;
             selectAll.Click += delegate
             {
@@ -1243,7 +1249,7 @@ namespace RightClickGuardian
             };
             actions.Children.Add(selectAll);
             Button clear = RoundedButton("清空选择",
-                Color.FromRgb(238, 239, 246), Muted, 11);
+                Color.FromRgb(246, 237, 241), Muted, 11);
             clear.Height = 32;
             clear.Margin = new Thickness(8, 0, 0, 0);
             clear.Click += delegate
@@ -1253,7 +1259,7 @@ namespace RightClickGuardian
             };
             actions.Children.Add(clear);
             softwareCloseSelectedButton = RoundedButton("关闭已选",
-                Color.FromRgb(255, 236, 244), Color.FromRgb(198, 74, 122), 11);
+                Color.FromRgb(255, 230, 239), Color.FromRgb(181, 65, 112), 11);
             softwareCloseSelectedButton.Height = 32;
             softwareCloseSelectedButton.Margin = new Thickness(8, 0, 0, 0);
             softwareCloseSelectedButton.Click += async delegate
@@ -1568,7 +1574,7 @@ namespace RightClickGuardian
             sampleIcon.Height = 72;
             sampleIcon.CornerRadius = new CornerRadius(24);
             sampleIcon.Background = new LinearGradientBrush(
-                Color.FromRgb(239, 238, 255), Color.FromRgb(255, 235, 244), 45);
+                Color.FromRgb(244, 236, 249), Color.FromRgb(255, 230, 239), 45);
             sampleIcon.HorizontalAlignment = HorizontalAlignment.Left;
             TextBlock sampleGlyph = new TextBlock();
             sampleGlyph.Text = selectedLabSample.Icon;
@@ -1618,7 +1624,7 @@ namespace RightClickGuardian
             info.Children.Add(explorerButton);
             TextBlock privacy = new TextBlock();
             privacy.Text = "测试文件为空白样本，仅保存在本机实验室目录。";
-            privacy.Foreground = new SolidColorBrush(Color.FromRgb(157, 161, 181));
+            privacy.Foreground = new SolidColorBrush(Color.FromRgb(157, 136, 151));
             privacy.FontSize = 9;
             privacy.Margin = new Thickness(0, 10, 0, 0);
             info.Children.Add(privacy);
@@ -1697,7 +1703,7 @@ namespace RightClickGuardian
             iconTile.Width = 40;
             iconTile.Height = 40;
             iconTile.CornerRadius = new CornerRadius(13);
-            iconTile.Background = new SolidColorBrush(Color.FromRgb(245, 245, 252));
+            iconTile.Background = new SolidColorBrush(Color.FromRgb(252, 241, 245));
             iconTile.VerticalAlignment = VerticalAlignment.Center;
             iconTile.HorizontalAlignment = HorizontalAlignment.Center;
             TextBlock fallbackIcon = new TextBlock();
@@ -1838,11 +1844,33 @@ namespace RightClickGuardian
             empty.Padding = new Thickness(30);
             empty.Margin = new Thickness(0, 8, 0, 0);
             StackPanel words = new StackPanel();
-            TextBlock cat = new TextBlock();
-            cat.Text = "ฅ^•ﻌ•^ฅ";
-            cat.FontSize = 30;
-            cat.HorizontalAlignment = HorizontalAlignment.Center;
-            words.Children.Add(cat);
+            Border portrait = new Border();
+            portrait.Width = 64;
+            portrait.Height = 64;
+            portrait.CornerRadius = new CornerRadius(22);
+            portrait.BorderBrush = new SolidColorBrush(
+                Color.FromRgb(245, 190, 209));
+            portrait.BorderThickness = new Thickness(1);
+            portrait.HorizontalAlignment = HorizontalAlignment.Center;
+            if (ThemeAssets.MascotPortrait != null)
+            {
+                ImageBrush image = new ImageBrush(
+                    ThemeAssets.MascotPortrait);
+                image.Stretch = Stretch.UniformToFill;
+                portrait.Background = image;
+            }
+            else
+            {
+                portrait.Background = new SolidColorBrush(
+                    Color.FromRgb(255, 230, 239));
+                TextBlock heart = new TextBlock();
+                heart.Text = "♡";
+                heart.FontSize = 30;
+                heart.HorizontalAlignment = HorizontalAlignment.Center;
+                heart.VerticalAlignment = VerticalAlignment.Center;
+                portrait.Child = heart;
+            }
+            words.Children.Add(portrait);
             TextBlock title = new TextBlock();
             title.Text = scanning ? "还在认真翻找中…" : "没有找到匹配项";
             title.FontSize = 14;
@@ -1954,7 +1982,7 @@ namespace RightClickGuardian
                 bool selected = string.Equals(pair.Key, selectedCategory,
                     StringComparison.OrdinalIgnoreCase);
                 pair.Value.Background = new SolidColorBrush(selected
-                    ? Color.FromRgb(238, 237, 255) : Colors.Transparent);
+                    ? Color.FromRgb(255, 228, 238) : Colors.Transparent);
                 pair.Value.Foreground = new SolidColorBrush(selected ? AccentDark : Ink);
                 pair.Value.FontWeight = selected ? FontWeights.SemiBold : FontWeights.Normal;
             }

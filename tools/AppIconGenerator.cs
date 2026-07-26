@@ -10,17 +10,30 @@ internal static class AppIconGenerator
     private static int Main(string[] args)
     {
         string output = args.Length > 0 ? args[0] : "RightClickGuardian.ico";
+        string sourcePath = args.Length > 1 ? args[1] : "ThemeMascot.png";
+        if (!File.Exists(sourcePath))
+        {
+            Console.Error.WriteLine("Mascot source image not found: " + sourcePath);
+            return 1;
+        }
         int[] sizes = new[] { 16, 24, 32, 48, 64, 128, 256 };
         List<byte[]> images = new List<byte[]>();
-        foreach (int size in sizes)
+        using (Image source = Image.FromFile(sourcePath))
         {
-            using (Bitmap bitmap = DrawIcon(size))
-            using (MemoryStream stream = new MemoryStream())
+            using (Bitmap mascot = DrawIcon(512, source))
+                mascot.Save(Path.ChangeExtension(output, ".mascot.png"),
+                    ImageFormat.Png);
+            foreach (int size in sizes)
             {
-                if (size == 256)
-                    bitmap.Save(Path.ChangeExtension(output, ".preview.png"), ImageFormat.Png);
-                bitmap.Save(stream, ImageFormat.Png);
-                images.Add(stream.ToArray());
+                using (Bitmap bitmap = DrawIcon(size, source))
+                using (MemoryStream stream = new MemoryStream())
+                {
+                    if (size == 256)
+                        bitmap.Save(Path.ChangeExtension(output, ".preview.png"),
+                            ImageFormat.Png);
+                    bitmap.Save(stream, ImageFormat.Png);
+                    images.Add(stream.ToArray());
+                }
             }
         }
 
@@ -49,68 +62,37 @@ internal static class AppIconGenerator
         return 0;
     }
 
-    private static Bitmap DrawIcon(int size)
+    private static Bitmap DrawIcon(int size, Image source)
     {
         Bitmap bitmap = new Bitmap(size, size, PixelFormat.Format32bppArgb);
         using (Graphics graphics = Graphics.FromImage(bitmap))
         {
             graphics.SmoothingMode = SmoothingMode.AntiAlias;
+            graphics.InterpolationMode = InterpolationMode.HighQualityBicubic;
+            graphics.CompositingQuality = CompositingQuality.HighQuality;
             graphics.PixelOffsetMode = PixelOffsetMode.HighQuality;
-            RectangleF bounds = new RectangleF(0, 0, size - 1, size - 1);
-            using (GraphicsPath rounded = Rounded(bounds, size * 0.23f))
-            using (LinearGradientBrush gradient = new LinearGradientBrush(
-                bounds, Color.FromArgb(255, 106, 92, 247),
-                Color.FromArgb(255, 244, 146, 199), 35f))
+            graphics.Clear(Color.Transparent);
+            RectangleF bounds = new RectangleF(0.5f, 0.5f,
+                size - 1f, size - 1f);
+            using (GraphicsPath rounded = Rounded(bounds, size * 0.22f))
             {
-                graphics.FillPath(gradient, rounded);
-            }
-
-            float scale = size / 256f;
-            PointF[] face = new[]
-            {
-                P(57, 104, scale), P(63, 52, scale), P(104, 78, scale),
-                P(128, 70, scale), P(152, 78, scale), P(193, 52, scale),
-                P(199, 104, scale), P(195, 169, scale), P(171, 195, scale),
-                P(85, 195, scale), P(61, 169, scale)
-            };
-            using (GraphicsPath cat = new GraphicsPath())
-            using (SolidBrush faceBrush = new SolidBrush(Color.FromArgb(247, 250, 255)))
-            using (Pen outline = new Pen(Color.FromArgb(255, 50, 39, 83),
-                Math.Max(1.3f, 7f * scale)))
-            {
-                cat.AddClosedCurve(face, 0.12f);
-                graphics.FillPath(faceBrush, cat);
-                graphics.DrawPath(outline, cat);
-            }
-
-            using (SolidBrush eye = new SolidBrush(Color.FromArgb(255, 50, 39, 83)))
-            {
-                graphics.FillEllipse(eye, R(92, 121, 13, 18, scale));
-                graphics.FillEllipse(eye, R(151, 121, 13, 18, scale));
-                graphics.FillEllipse(eye, R(123, 143, 10, 8, scale));
-            }
-            using (Pen mouth = new Pen(Color.FromArgb(255, 50, 39, 83),
-                Math.Max(1f, 5f * scale)))
-            {
-                graphics.DrawArc(mouth, R(108, 143, 20, 22, scale), 5, 80);
-                graphics.DrawArc(mouth, R(128, 143, 20, 22, scale), 95, 80);
-            }
-
-            RectangleF badge = R(159, 159, 76, 76, scale);
-            using (SolidBrush badgeBrush = new SolidBrush(Color.FromArgb(255, 85, 205, 169)))
-            using (Pen badgeEdge = new Pen(Color.White, Math.Max(1f, 5f * scale)))
-            {
-                graphics.FillEllipse(badgeBrush, badge);
-                graphics.DrawEllipse(badgeEdge, badge);
-            }
-            using (Pen check = new Pen(Color.White, Math.Max(1.5f, 10f * scale)))
-            {
-                check.StartCap = LineCap.Round;
-                check.EndCap = LineCap.Round;
-                graphics.DrawLines(check, new[]
+                GraphicsState state = graphics.Save();
+                graphics.SetClip(rounded);
+                float crop = Math.Min(source.Width, source.Height) * 0.84f;
+                RectangleF sourceRect = new RectangleF(
+                    (source.Width - crop) / 2f,
+                    Math.Max(0, (source.Height - crop) / 2f - crop * 0.025f),
+                    crop, crop);
+                graphics.DrawImage(source, bounds, sourceRect,
+                    GraphicsUnit.Pixel);
+                graphics.Restore(state);
+                if (size >= 24)
                 {
-                    P(179, 197, scale), P(192, 211, scale), P(218, 181, scale)
-                });
+                    using (Pen edge = new Pen(
+                        Color.FromArgb(170, 255, 231, 239),
+                        Math.Max(1f, size / 96f)))
+                        graphics.DrawPath(edge, rounded);
+                }
             }
         }
         return bitmap;
@@ -127,15 +109,5 @@ internal static class AppIconGenerator
         path.AddArc(bounds.Left, bounds.Bottom - diameter, diameter, diameter, 90, 90);
         path.CloseFigure();
         return path;
-    }
-
-    private static PointF P(float x, float y, float scale)
-    {
-        return new PointF(x * scale, y * scale);
-    }
-
-    private static RectangleF R(float x, float y, float width, float height, float scale)
-    {
-        return new RectangleF(x * scale, y * scale, width * scale, height * scale);
     }
 }

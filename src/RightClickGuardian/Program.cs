@@ -24,7 +24,7 @@ namespace RightClickGuardian
                 if (!created)
                 {
                     System.Windows.MessageBox.Show(
-                        "右键小守卫已经打开啦 ฅ^•ﻌ•^ฅ",
+                        "右键小守卫已经打开啦 ♡",
                         "右键小守卫",
                         System.Windows.MessageBoxButton.OK,
                         System.Windows.MessageBoxImage.Information);
