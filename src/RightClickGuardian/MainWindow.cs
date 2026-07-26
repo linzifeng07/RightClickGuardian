@@ -88,6 +88,11 @@ namespace RightClickGuardian
         private Button guardButton;
         private Button scanButton;
         private Button reportButton;
+        private int activeTouchDeviceId;
+        private Point touchStartPoint;
+        private Point touchLastPoint;
+        private DateTime touchStartedAt;
+        private bool horizontalTouchGesture;
 
         public MainWindow()
         {
@@ -105,6 +110,7 @@ namespace RightClickGuardian
                 StringComparer.OrdinalIgnoreCase);
             backNavigationHistory = new Stack<NavigationState>();
             forwardNavigationHistory = new Stack<NavigationState>();
+            activeTouchDeviceId = -1;
             selectedCategory = "";
             searchDebounce = new DispatcherTimer();
             searchDebounce.Interval = TimeSpan.FromMilliseconds(180);
@@ -127,6 +133,10 @@ namespace RightClickGuardian
             FontFamily = new FontFamily("Microsoft YaHei UI");
             Foreground = new SolidColorBrush(Ink);
             PreviewMouseDown += OnPreviewMouseButtonDown;
+            PreviewTouchDown += OnPreviewTouchDown;
+            PreviewTouchMove += OnPreviewTouchMove;
+            PreviewTouchUp += OnPreviewTouchUp;
+            Deactivated += delegate { ResetTouchGesture(); };
 
             BuildUi();
             SourceInitialized += delegate { NativeMethods.ApplyRoundedCorners(this); };
@@ -215,7 +225,7 @@ namespace RightClickGuardian
             name.VerticalAlignment = VerticalAlignment.Center;
             brand.Children.Add(name);
             TextBlock version = new TextBlock();
-            version.Text = "  v1.3.0";
+            version.Text = "  v1.3.1";
             version.Foreground = new SolidColorBrush(Muted);
             version.FontSize = 11;
             version.VerticalAlignment = VerticalAlignment.Center;
@@ -289,6 +299,7 @@ namespace RightClickGuardian
             ScrollViewer scroll = new ScrollViewer();
             scroll.VerticalScrollBarVisibility = ScrollBarVisibility.Auto;
             scroll.HorizontalScrollBarVisibility = ScrollBarVisibility.Disabled;
+            ConfigureTouchScrolling(scroll);
             Grid.SetRow(scroll, 1);
             StackPanel nav = new StackPanel();
             nav.Margin = new Thickness(9, 3, 9, 10);
@@ -365,7 +376,7 @@ namespace RightClickGuardian
         private void AddNavButton(Panel panel, string category, string icon, string label)
         {
             Button button = RoundedButton("", Colors.Transparent, Ink, 12);
-            button.Height = 39;
+            button.Height = 42;
             button.HorizontalContentAlignment = HorizontalAlignment.Stretch;
             button.Margin = new Thickness(0, 1, 0, 1);
             button.Tag = category;
@@ -433,6 +444,7 @@ namespace RightClickGuardian
             listScroll = new ScrollViewer();
             listScroll.VerticalScrollBarVisibility = ScrollBarVisibility.Auto;
             listScroll.HorizontalScrollBarVisibility = ScrollBarVisibility.Disabled;
+            ConfigureTouchScrolling(listScroll);
             listScroll.ScrollChanged += OnListScrollChanged;
             itemsPanel = new StackPanel();
             itemsPanel.Margin = new Thickness(1, 5, 6, 12);
@@ -743,6 +755,95 @@ namespace RightClickGuardian
                 else
                     SetStatus("前面暂时没有页面啦", true);
             }
+        }
+
+        private void OnPreviewTouchDown(object sender, TouchEventArgs e)
+        {
+            if (activeTouchDeviceId >= 0) return;
+            TouchPoint point = e.GetTouchPoint(this);
+            if (point.Position.Y <= 52) return;
+            activeTouchDeviceId = e.TouchDevice.Id;
+            touchStartPoint = point.Position;
+            touchLastPoint = point.Position;
+            touchStartedAt = DateTime.UtcNow;
+            horizontalTouchGesture = false;
+        }
+
+        private void OnPreviewTouchMove(object sender, TouchEventArgs e)
+        {
+            if (e.TouchDevice.Id != activeTouchDeviceId) return;
+            touchLastPoint = e.GetTouchPoint(this).Position;
+            Vector travel = touchLastPoint - touchStartPoint;
+            if (!horizontalTouchGesture &&
+                Math.Abs(travel.X) >= 18 &&
+                Math.Abs(travel.X) > Math.Abs(travel.Y) * 1.35)
+                horizontalTouchGesture = true;
+            if (horizontalTouchGesture)
+                e.Handled = true;
+        }
+
+        private void OnPreviewTouchUp(object sender, TouchEventArgs e)
+        {
+            if (e.TouchDevice.Id != activeTouchDeviceId) return;
+            touchLastPoint = e.GetTouchPoint(this).Position;
+            Vector travel = touchLastPoint - touchStartPoint;
+            double elapsed = Math.Max(0,
+                (DateTime.UtcNow - touchStartedAt).TotalMilliseconds);
+            bool horizontal = horizontalTouchGesture;
+            ResetTouchGesture();
+            if (!horizontal) return;
+            e.Handled = true;
+
+            int direction = ClassifyTouchSwipe(travel, elapsed);
+            if (direction > 0)
+            {
+                if (NavigateBack())
+                    SetStatus("右滑：已返回“" +
+                        CurrentNavigationTitle() + "”", true);
+                else
+                    SetStatus("已经是最早打开的页面啦", true);
+            }
+            else if (direction < 0)
+            {
+                if (NavigateForward())
+                    SetStatus("左滑：已前进到“" +
+                        CurrentNavigationTitle() + "”", true);
+                else
+                    SetStatus("前面暂时没有页面啦", true);
+            }
+        }
+
+        private void ResetTouchGesture()
+        {
+            activeTouchDeviceId = -1;
+            horizontalTouchGesture = false;
+            touchStartPoint = new Point();
+            touchLastPoint = new Point();
+        }
+
+        private static int ClassifyTouchSwipe(Vector travel,
+            double elapsedMilliseconds)
+        {
+            double horizontal = Math.Abs(travel.X);
+            double vertical = Math.Abs(travel.Y);
+            if (elapsedMilliseconds <= 0 || elapsedMilliseconds > 1600 ||
+                horizontal < 72 || horizontal <= vertical * 1.35)
+                return 0;
+            return travel.X > 0 ? 1 : -1;
+        }
+
+        private static void ConfigureTouchScrolling(ScrollViewer scroll)
+        {
+            scroll.PanningMode = PanningMode.VerticalOnly;
+            scroll.PanningRatio = 1.05;
+            scroll.PanningDeceleration = 0.0012;
+            scroll.CanContentScroll = false;
+            scroll.IsDeferredScrollingEnabled = false;
+            scroll.ManipulationBoundaryFeedback += delegate(
+                object sender, ManipulationBoundaryFeedbackEventArgs e)
+            {
+                e.Handled = true;
+            };
         }
 
         private void NavigateTo(string category, string softwareKey)

@@ -3,6 +3,8 @@ using System;
 using System.Collections.Generic;
 using System.IO;
 using System.Reflection;
+using System.Windows;
+using System.Windows.Controls;
 using System.Windows.Input;
 
 internal static class NavigationHarness
@@ -24,14 +26,35 @@ internal static class NavigationHarness
             MethodInfo navigateForward = type.GetMethod("NavigateForward", flags);
             MethodInfo mouseHandler = type.GetMethod(
                 "OnPreviewMouseButtonDown", flags);
+            MethodInfo classifyTouchSwipe = type.GetMethod(
+                "ClassifyTouchSwipe", BindingFlags.Static |
+                BindingFlags.NonPublic);
             FieldInfo category = type.GetField("selectedCategory", flags);
             FieldInfo software = type.GetField("selectedSoftwareKey", flags);
             FieldInfo entries = type.GetField("allEntries", flags);
+            FieldInfo listScroll = type.GetField("listScroll", flags);
 
             if (navigateTo == null || navigateBack == null ||
                 navigateForward == null || mouseHandler == null ||
-                entries == null)
+                classifyTouchSwipe == null || entries == null ||
+                listScroll == null)
                 return Fail("Navigation methods are missing.");
+
+            ScrollViewer touchScroll =
+                (ScrollViewer)listScroll.GetValue(window);
+            if (touchScroll.PanningMode != PanningMode.VerticalOnly ||
+                touchScroll.CanContentScroll ||
+                touchScroll.IsDeferredScrollingEnabled ||
+                Math.Abs(touchScroll.PanningRatio - 1.05) > 0.001 ||
+                Math.Abs(touchScroll.PanningDeceleration - 0.0012) > 0.00001)
+                return Fail("Touch inertia was not configured on the list.");
+
+            if (Classify(classifyTouchSwipe, new Vector(110, 12), 420) != 1 ||
+                Classify(classifyTouchSwipe, new Vector(-110, 12), 420) != -1 ||
+                Classify(classifyTouchSwipe, new Vector(55, 3), 300) != 0 ||
+                Classify(classifyTouchSwipe, new Vector(110, 90), 400) != 0 ||
+                Classify(classifyTouchSwipe, new Vector(110, 8), 1800) != 0)
+                return Fail("Touch swipe direction filtering is unsafe.");
 
             entries.SetValue(window, new List<MenuEntry>
             {
@@ -96,7 +119,7 @@ internal static class NavigationHarness
                 return Fail("Mouse XButton2 did not navigate forward.");
 
             Console.WriteLine(
-                "PASS: mouse side-button back/forward navigation and history");
+                "PASS: mouse and touch back/forward navigation, inertia, and history");
             return 0;
         }
         catch (Exception ex)
@@ -111,6 +134,13 @@ internal static class NavigationHarness
             }
             catch { }
         }
+    }
+
+    private static int Classify(MethodInfo method, Vector travel,
+        double elapsedMilliseconds)
+    {
+        return (int)method.Invoke(null,
+            new object[] { travel, elapsedMilliseconds });
     }
 
     private static int Fail(string message)
