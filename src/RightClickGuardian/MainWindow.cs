@@ -15,15 +15,36 @@ namespace RightClickGuardian
 {
     public sealed class MainWindow : Window
     {
-        private static readonly Color Accent = Color.FromRgb(124, 119, 255);
-        private static readonly Color AccentDark = Color.FromRgb(91, 84, 220);
-        private static readonly Color Pink = Color.FromRgb(255, 143, 181);
-        private static readonly Color Mint = Color.FromRgb(80, 197, 160);
-        private static readonly Color Ink = Color.FromRgb(41, 48, 73);
-        private static readonly Color Muted = Color.FromRgb(119, 125, 151);
-        private static readonly Color Surface = Color.FromRgb(255, 255, 255);
-        private static readonly Color Page = Color.FromRgb(247, 248, 253);
-        private static readonly Color Line = Color.FromRgb(233, 234, 244);
+        private sealed class NavigationState
+        {
+            public string Category;
+            public string SoftwareKey;
+            public double VerticalOffset;
+
+            public NavigationState(string category, string softwareKey,
+                double verticalOffset)
+            {
+                Category = category ?? "";
+                SoftwareKey = softwareKey ?? "";
+                VerticalOffset = Math.Max(0, verticalOffset);
+            }
+        }
+
+        private sealed class ScanBundle
+        {
+            public ScanResult Result;
+            public List<SoftwareGroup> SoftwareGroups;
+        }
+
+        private static readonly Color Accent = Color.FromRgb(231, 111, 153);
+        private static readonly Color AccentDark = Color.FromRgb(151, 73, 113);
+        private static readonly Color Pink = Color.FromRgb(246, 151, 181);
+        private static readonly Color Mint = Color.FromRgb(139, 190, 173);
+        private static readonly Color Ink = Color.FromRgb(68, 51, 65);
+        private static readonly Color Muted = Color.FromRgb(137, 116, 132);
+        private static readonly Color Surface = Color.FromRgb(255, 253, 252);
+        private static readonly Color Page = Color.FromRgb(255, 247, 249);
+        private static readonly Color Line = Color.FromRgb(241, 222, 229);
 
         private readonly PolicyStore policyStore;
         private readonly MenuScanner scanner;
@@ -37,11 +58,20 @@ namespace RightClickGuardian
         private bool scanning;
         private LabSample selectedLabSample;
         private List<MenuEntry> currentEntries;
+        private SoftwareGroup currentSoftwareGroup;
+        private List<SoftwareGroup> softwareGroupsCache;
+        private string selectedSoftwareKey;
+        private readonly HashSet<string> selectedSoftwareEntryIds;
+        private readonly Stack<NavigationState> backNavigationHistory;
+        private readonly Stack<NavigationState> forwardNavigationHistory;
         private int renderedEntryCount;
         private bool resettingEntries;
         private bool appendingEntries;
+        private int iconLoadGeneration;
         private readonly DispatcherTimer searchDebounce;
         private TextBlock loadHint;
+        private TextBlock softwareSelectionText;
+        private Button softwareCloseSelectedButton;
 
         private Grid pageRoot;
         private StackPanel itemsPanel;
@@ -58,6 +88,11 @@ namespace RightClickGuardian
         private Button guardButton;
         private Button scanButton;
         private Button reportButton;
+        private int activeTouchDeviceId;
+        private Point touchStartPoint;
+        private Point touchLastPoint;
+        private DateTime touchStartedAt;
+        private bool horizontalTouchGesture;
 
         public MainWindow()
         {
@@ -70,6 +105,12 @@ namespace RightClickGuardian
             navCounts = new Dictionary<string, TextBlock>(StringComparer.OrdinalIgnoreCase);
             allEntries = new List<MenuEntry>();
             currentEntries = new List<MenuEntry>();
+            selectedSoftwareKey = "";
+            selectedSoftwareEntryIds = new HashSet<string>(
+                StringComparer.OrdinalIgnoreCase);
+            backNavigationHistory = new Stack<NavigationState>();
+            forwardNavigationHistory = new Stack<NavigationState>();
+            activeTouchDeviceId = -1;
             selectedCategory = "";
             searchDebounce = new DispatcherTimer();
             searchDebounce.Interval = TimeSpan.FromMilliseconds(180);
@@ -87,9 +128,15 @@ namespace RightClickGuardian
             WindowStartupLocation = WindowStartupLocation.CenterScreen;
             WindowStyle = WindowStyle.None;
             ResizeMode = ResizeMode.CanResize;
+            Icon = ThemeAssets.MascotPortrait;
             Background = new SolidColorBrush(Page);
             FontFamily = new FontFamily("Microsoft YaHei UI");
             Foreground = new SolidColorBrush(Ink);
+            PreviewMouseDown += OnPreviewMouseButtonDown;
+            PreviewTouchDown += OnPreviewTouchDown;
+            PreviewTouchMove += OnPreviewTouchMove;
+            PreviewTouchUp += OnPreviewTouchUp;
+            Deactivated += delegate { ResetTouchGesture(); };
 
             BuildUi();
             SourceInitialized += delegate { NativeMethods.ApplyRoundedCorners(this); };
@@ -100,7 +147,7 @@ namespace RightClickGuardian
         {
             Border shell = new Border();
             shell.Background = new SolidColorBrush(Page);
-            shell.BorderBrush = new SolidColorBrush(Color.FromRgb(225, 226, 238));
+            shell.BorderBrush = new SolidColorBrush(Color.FromRgb(235, 209, 219));
             shell.BorderThickness = new Thickness(1);
 
             Grid root = new Grid();
@@ -146,18 +193,29 @@ namespace RightClickGuardian
             icon.Width = 30;
             icon.Height = 30;
             icon.CornerRadius = new CornerRadius(10);
-            icon.Background = new LinearGradientBrush(
-                new GradientStopCollection
-                {
-                    new GradientStop(Accent, 0),
-                    new GradientStop(Pink, 1)
-                }, 45);
-            TextBlock paw = new TextBlock();
-            paw.Text = "🐾";
-            paw.FontSize = 15;
-            paw.HorizontalAlignment = HorizontalAlignment.Center;
-            paw.VerticalAlignment = VerticalAlignment.Center;
-            icon.Child = paw;
+            icon.BorderBrush = new SolidColorBrush(Color.FromRgb(245, 190, 209));
+            icon.BorderThickness = new Thickness(1);
+            if (ThemeAssets.MascotPortrait != null)
+            {
+                ImageBrush portrait = new ImageBrush(ThemeAssets.MascotPortrait);
+                portrait.Stretch = Stretch.UniformToFill;
+                icon.Background = portrait;
+            }
+            else
+            {
+                icon.Background = new LinearGradientBrush(
+                    new GradientStopCollection
+                    {
+                        new GradientStop(Accent, 0),
+                        new GradientStop(Pink, 1)
+                    }, 45);
+                TextBlock fallback = new TextBlock();
+                fallback.Text = "♡";
+                fallback.FontSize = 16;
+                fallback.HorizontalAlignment = HorizontalAlignment.Center;
+                fallback.VerticalAlignment = VerticalAlignment.Center;
+                icon.Child = fallback;
+            }
             brand.Children.Add(icon);
             TextBlock name = new TextBlock();
             name.Text = "右键小守卫";
@@ -167,7 +225,7 @@ namespace RightClickGuardian
             name.VerticalAlignment = VerticalAlignment.Center;
             brand.Children.Add(name);
             TextBlock version = new TextBlock();
-            version.Text = "  v1.1";
+            version.Text = "  v1.3.1";
             version.Foreground = new SolidColorBrush(Muted);
             version.FontSize = 11;
             version.VerticalAlignment = VerticalAlignment.Center;
@@ -221,10 +279,10 @@ namespace RightClickGuardian
             helper.Margin = new Thickness(12, 14, 12, 8);
             helper.Padding = new Thickness(12);
             helper.CornerRadius = new CornerRadius(17);
-            helper.Background = new SolidColorBrush(Color.FromRgb(244, 243, 255));
+            helper.Background = new SolidColorBrush(Color.FromRgb(255, 237, 244));
             StackPanel helperContent = new StackPanel();
             TextBlock helperTitle = new TextBlock();
-            helperTitle.Text = "ฅ  菜单分类";
+            helperTitle.Text = "♡  菜单分类";
             helperTitle.FontWeight = FontWeights.SemiBold;
             helperTitle.FontSize = 14;
             helperContent.Children.Add(helperTitle);
@@ -241,11 +299,13 @@ namespace RightClickGuardian
             ScrollViewer scroll = new ScrollViewer();
             scroll.VerticalScrollBarVisibility = ScrollBarVisibility.Auto;
             scroll.HorizontalScrollBarVisibility = ScrollBarVisibility.Disabled;
+            ConfigureTouchScrolling(scroll);
             Grid.SetRow(scroll, 1);
             StackPanel nav = new StackPanel();
             nav.Margin = new Thickness(9, 3, 9, 10);
             scroll.Content = nav;
             AddNavButton(nav, "", "✦", "全部项目");
+            AddNavButton(nav, CategoryNames.Software, "▦", CategoryNames.Software);
             AddNavButton(nav, CategoryNames.Lab, "🧪", CategoryNames.Lab);
             navCounts[CategoryNames.Lab].Text = "TEST";
             AddNavSeparator(nav);
@@ -273,7 +333,7 @@ namespace RightClickGuardian
             guardCard.Margin = new Thickness(12, 6, 12, 14);
             guardCard.Padding = new Thickness(12);
             guardCard.CornerRadius = new CornerRadius(16);
-            guardCard.Background = new SolidColorBrush(Color.FromRgb(239, 251, 247));
+            guardCard.Background = new SolidColorBrush(Color.FromRgb(241, 249, 246));
             Grid.SetRow(guardCard, 2);
             Grid guardGrid = new Grid();
             guardGrid.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
@@ -294,7 +354,7 @@ namespace RightClickGuardian
             guardWords.Children.Add(guardTitle);
             TextBlock guardHint = new TextBlock();
             guardHint.Text = "被软件写回时自动压制";
-            guardHint.Foreground = new SolidColorBrush(Color.FromRgb(73, 141, 120));
+            guardHint.Foreground = new SolidColorBrush(Color.FromRgb(91, 143, 126));
             guardHint.FontSize = 9.5;
             guardHint.Margin = new Thickness(0, 3, 0, 0);
             guardWords.Children.Add(guardHint);
@@ -316,7 +376,7 @@ namespace RightClickGuardian
         private void AddNavButton(Panel panel, string category, string icon, string label)
         {
             Button button = RoundedButton("", Colors.Transparent, Ink, 12);
-            button.Height = 39;
+            button.Height = 42;
             button.HorizontalContentAlignment = HorizontalAlignment.Stretch;
             button.Margin = new Thickness(0, 1, 0, 1);
             button.Tag = category;
@@ -352,13 +412,17 @@ namespace RightClickGuardian
                     StringComparison.OrdinalIgnoreCase) &&
                     itemsPanel != null && itemsPanel.Children.Count > 0)
                 {
+                    if (string.Equals(nextCategory, CategoryNames.Software,
+                        StringComparison.OrdinalIgnoreCase) &&
+                        !string.IsNullOrWhiteSpace(selectedSoftwareKey))
+                    {
+                        NavigateTo(CategoryNames.Software, "");
+                        return;
+                    }
                     listScroll.ScrollToTop();
                     return;
                 }
-                selectedCategory = nextCategory;
-                searchDebounce.Stop();
-                UpdateNavSelection();
-                RenderEntries();
+                NavigateTo(nextCategory, "");
             };
             panel.Children.Add(button);
             navButtons[category] = button;
@@ -380,6 +444,7 @@ namespace RightClickGuardian
             listScroll = new ScrollViewer();
             listScroll.VerticalScrollBarVisibility = ScrollBarVisibility.Auto;
             listScroll.HorizontalScrollBarVisibility = ScrollBarVisibility.Disabled;
+            ConfigureTouchScrolling(listScroll);
             listScroll.ScrollChanged += OnListScrollChanged;
             itemsPanel = new StackPanel();
             itemsPanel.Margin = new Thickness(1, 5, 6, 12);
@@ -400,9 +465,9 @@ namespace RightClickGuardian
             LinearGradientBrush gradient = new LinearGradientBrush();
             gradient.StartPoint = new Point(0, 0);
             gradient.EndPoint = new Point(1, 1);
-            gradient.GradientStops.Add(new GradientStop(Color.FromRgb(105, 101, 240), 0));
-            gradient.GradientStops.Add(new GradientStop(Color.FromRgb(146, 126, 255), 0.58));
-            gradient.GradientStops.Add(new GradientStop(Color.FromRgb(255, 172, 201), 1));
+            gradient.GradientStops.Add(new GradientStop(Color.FromRgb(139, 82, 132), 0));
+            gradient.GradientStops.Add(new GradientStop(Color.FromRgb(205, 104, 151), 0.55));
+            gradient.GradientStops.Add(new GradientStop(Color.FromRgb(242, 161, 186), 1));
             hero.Background = gradient;
 
             Grid grid = new Grid();
@@ -442,7 +507,7 @@ namespace RightClickGuardian
             safetyText.VerticalAlignment = VerticalAlignment.Center;
             safetyText.Margin = new Thickness(0, 0, 15, 0);
             TextBlock safeTitle = new TextBlock();
-            safeTitle.Text = "回写也不怕";
+            safeTitle.Text = "萌系强制守护";
             safeTitle.Foreground = Brushes.White;
             safeTitle.FontWeight = FontWeights.SemiBold;
             safeTitle.FontSize = 13;
@@ -458,34 +523,28 @@ namespace RightClickGuardian
             scanMascot = new Border();
             scanMascot.Width = 82;
             scanMascot.Height = 82;
-            scanMascot.CornerRadius = new CornerRadius(29);
-            scanMascot.Background = new SolidColorBrush(Color.FromArgb(55, 255, 255, 255));
-            scanMascot.BorderBrush = new SolidColorBrush(Color.FromArgb(90, 255, 255, 255));
-            scanMascot.BorderThickness = new Thickness(1);
-            Grid mascot = new Grid();
-            TextBlock cat = new TextBlock();
-            cat.Text = "🐱";
-            cat.FontSize = 42;
-            cat.HorizontalAlignment = HorizontalAlignment.Center;
-            cat.VerticalAlignment = VerticalAlignment.Center;
-            mascot.Children.Add(cat);
-            Border shield = new Border();
-            shield.Width = 28;
-            shield.Height = 28;
-            shield.CornerRadius = new CornerRadius(10);
-            shield.Background = Brushes.White;
-            shield.HorizontalAlignment = HorizontalAlignment.Right;
-            shield.VerticalAlignment = VerticalAlignment.Bottom;
-            TextBlock shieldText = new TextBlock();
-            shieldText.Text = "✓";
-            shieldText.FontSize = 15;
-            shieldText.FontWeight = FontWeights.Bold;
-            shieldText.Foreground = new SolidColorBrush(Mint);
-            shieldText.HorizontalAlignment = HorizontalAlignment.Center;
-            shieldText.VerticalAlignment = VerticalAlignment.Center;
-            shield.Child = shieldText;
-            mascot.Children.Add(shield);
-            scanMascot.Child = mascot;
+            scanMascot.CornerRadius = new CornerRadius(27);
+            scanMascot.BorderBrush = new SolidColorBrush(
+                Color.FromArgb(190, 255, 255, 255));
+            scanMascot.BorderThickness = new Thickness(2);
+            if (ThemeAssets.MascotPortrait != null)
+            {
+                ImageBrush portrait = new ImageBrush(
+                    ThemeAssets.MascotPortrait);
+                portrait.Stretch = Stretch.UniformToFill;
+                scanMascot.Background = portrait;
+            }
+            else
+            {
+                scanMascot.Background = new SolidColorBrush(
+                    Color.FromArgb(55, 255, 255, 255));
+                TextBlock fallback = new TextBlock();
+                fallback.Text = "♡";
+                fallback.FontSize = 38;
+                fallback.HorizontalAlignment = HorizontalAlignment.Center;
+                fallback.VerticalAlignment = VerticalAlignment.Center;
+                scanMascot.Child = fallback;
+            }
             mascotRow.Children.Add(scanMascot);
             mascotArea.Children.Add(mascotRow);
             grid.Children.Add(mascotArea);
@@ -560,7 +619,7 @@ namespace RightClickGuardian
             actions.Orientation = Orientation.Horizontal;
             actions.Margin = new Thickness(10, 0, 0, 0);
             Grid.SetColumn(actions, 1);
-            reportButton = RoundedButton("扫描报告", Color.FromRgb(240, 241, 249), Ink, 14);
+            reportButton = RoundedButton("扫描报告", Color.FromRgb(255, 237, 244), Ink, 14);
             reportButton.Height = 42;
             reportButton.Margin = new Thickness(0, 0, 8, 0);
             reportButton.Click += delegate { ShowReport(); };
@@ -644,9 +703,18 @@ namespace RightClickGuardian
             try
             {
                 PolicyDocument policy = policyStore.Load();
-                ScanResult result = await Task.Run(delegate { return scanner.Scan(policy); });
-                lastScan = result;
-                allEntries = result.Entries;
+                ScanBundle bundle = await Task.Run(delegate
+                {
+                    ScanResult scanResult = scanner.Scan(policy);
+                    return new ScanBundle
+                    {
+                        Result = scanResult,
+                        SoftwareGroups = SoftwareCatalog.Build(scanResult.Entries)
+                    };
+                });
+                lastScan = bundle.Result;
+                allEntries = bundle.Result.Entries;
+                softwareGroupsCache = bundle.SoftwareGroups;
                 watch.Stop();
                 UpdateCounts();
                 RenderEntries();
@@ -668,21 +736,232 @@ namespace RightClickGuardian
             }
         }
 
+        private void OnPreviewMouseButtonDown(object sender, MouseButtonEventArgs e)
+        {
+            if (e.ChangedButton == MouseButton.XButton1)
+            {
+                e.Handled = true;
+                if (NavigateBack())
+                    SetStatus("鼠标侧键：已返回“" + CurrentNavigationTitle() + "”", true);
+                else
+                    SetStatus("已经是最早打开的页面啦", true);
+                return;
+            }
+            if (e.ChangedButton == MouseButton.XButton2)
+            {
+                e.Handled = true;
+                if (NavigateForward())
+                    SetStatus("鼠标侧键：已前进到“" + CurrentNavigationTitle() + "”", true);
+                else
+                    SetStatus("前面暂时没有页面啦", true);
+            }
+        }
+
+        private void OnPreviewTouchDown(object sender, TouchEventArgs e)
+        {
+            if (activeTouchDeviceId >= 0) return;
+            TouchPoint point = e.GetTouchPoint(this);
+            if (point.Position.Y <= 52) return;
+            activeTouchDeviceId = e.TouchDevice.Id;
+            touchStartPoint = point.Position;
+            touchLastPoint = point.Position;
+            touchStartedAt = DateTime.UtcNow;
+            horizontalTouchGesture = false;
+        }
+
+        private void OnPreviewTouchMove(object sender, TouchEventArgs e)
+        {
+            if (e.TouchDevice.Id != activeTouchDeviceId) return;
+            touchLastPoint = e.GetTouchPoint(this).Position;
+            Vector travel = touchLastPoint - touchStartPoint;
+            if (!horizontalTouchGesture &&
+                Math.Abs(travel.X) >= 18 &&
+                Math.Abs(travel.X) > Math.Abs(travel.Y) * 1.35)
+                horizontalTouchGesture = true;
+            if (horizontalTouchGesture)
+                e.Handled = true;
+        }
+
+        private void OnPreviewTouchUp(object sender, TouchEventArgs e)
+        {
+            if (e.TouchDevice.Id != activeTouchDeviceId) return;
+            touchLastPoint = e.GetTouchPoint(this).Position;
+            Vector travel = touchLastPoint - touchStartPoint;
+            double elapsed = Math.Max(0,
+                (DateTime.UtcNow - touchStartedAt).TotalMilliseconds);
+            bool horizontal = horizontalTouchGesture;
+            ResetTouchGesture();
+            if (!horizontal) return;
+            e.Handled = true;
+
+            int direction = ClassifyTouchSwipe(travel, elapsed);
+            if (direction > 0)
+            {
+                if (NavigateBack())
+                    SetStatus("右滑：已返回“" +
+                        CurrentNavigationTitle() + "”", true);
+                else
+                    SetStatus("已经是最早打开的页面啦", true);
+            }
+            else if (direction < 0)
+            {
+                if (NavigateForward())
+                    SetStatus("左滑：已前进到“" +
+                        CurrentNavigationTitle() + "”", true);
+                else
+                    SetStatus("前面暂时没有页面啦", true);
+            }
+        }
+
+        private void ResetTouchGesture()
+        {
+            activeTouchDeviceId = -1;
+            horizontalTouchGesture = false;
+            touchStartPoint = new Point();
+            touchLastPoint = new Point();
+        }
+
+        private static int ClassifyTouchSwipe(Vector travel,
+            double elapsedMilliseconds)
+        {
+            double horizontal = Math.Abs(travel.X);
+            double vertical = Math.Abs(travel.Y);
+            if (elapsedMilliseconds <= 0 || elapsedMilliseconds > 1600 ||
+                horizontal < 72 || horizontal <= vertical * 1.35)
+                return 0;
+            return travel.X > 0 ? 1 : -1;
+        }
+
+        private static void ConfigureTouchScrolling(ScrollViewer scroll)
+        {
+            scroll.PanningMode = PanningMode.VerticalOnly;
+            scroll.PanningRatio = 1.05;
+            scroll.PanningDeceleration = 0.0012;
+            scroll.CanContentScroll = false;
+            scroll.IsDeferredScrollingEnabled = false;
+            scroll.ManipulationBoundaryFeedback += delegate(
+                object sender, ManipulationBoundaryFeedbackEventArgs e)
+            {
+                e.Handled = true;
+            };
+        }
+
+        private void NavigateTo(string category, string softwareKey)
+        {
+            NavigationState current = CaptureNavigationState();
+            NavigationState next = new NavigationState(category,
+                string.Equals(category, CategoryNames.Software,
+                    StringComparison.OrdinalIgnoreCase) ? softwareKey : "", 0);
+            if (SameNavigationPage(current, next))
+            {
+                if (listScroll != null) listScroll.ScrollToTop();
+                return;
+            }
+            PushNavigationState(backNavigationHistory, current);
+            forwardNavigationHistory.Clear();
+            ApplyNavigationState(next);
+        }
+
+        private bool NavigateBack()
+        {
+            if (backNavigationHistory.Count == 0) return false;
+            NavigationState current = CaptureNavigationState();
+            NavigationState previous = backNavigationHistory.Pop();
+            PushNavigationState(forwardNavigationHistory, current);
+            ApplyNavigationState(previous);
+            return true;
+        }
+
+        private bool NavigateForward()
+        {
+            if (forwardNavigationHistory.Count == 0) return false;
+            NavigationState current = CaptureNavigationState();
+            NavigationState next = forwardNavigationHistory.Pop();
+            PushNavigationState(backNavigationHistory, current);
+            ApplyNavigationState(next);
+            return true;
+        }
+
+        private NavigationState CaptureNavigationState()
+        {
+            return new NavigationState(selectedCategory, selectedSoftwareKey,
+                listScroll == null ? 0 : listScroll.VerticalOffset);
+        }
+
+        private void ApplyNavigationState(NavigationState state)
+        {
+            selectedCategory = state == null ? "" : state.Category;
+            selectedSoftwareKey = state == null ? "" : state.SoftwareKey;
+            selectedSoftwareEntryIds.Clear();
+            searchDebounce.Stop();
+            UpdateNavSelection();
+            RenderEntries();
+            double offset = state == null ? 0 : state.VerticalOffset;
+            if (offset <= 0 || listScroll == null) return;
+            Dispatcher.BeginInvoke(new Action(delegate
+            {
+                if (listScroll != null)
+                    listScroll.ScrollToVerticalOffset(offset);
+            }), DispatcherPriority.ContextIdle);
+        }
+
+        private string CurrentNavigationTitle()
+        {
+            if (categoryTitle != null &&
+                !string.IsNullOrWhiteSpace(categoryTitle.Text))
+                return categoryTitle.Text;
+            return string.IsNullOrWhiteSpace(selectedCategory)
+                ? "全部右键菜单" : selectedCategory;
+        }
+
+        private static bool SameNavigationPage(NavigationState left,
+            NavigationState right)
+        {
+            if (left == null || right == null) return false;
+            return string.Equals(left.Category, right.Category,
+                       StringComparison.OrdinalIgnoreCase) &&
+                   string.Equals(left.SoftwareKey, right.SoftwareKey,
+                       StringComparison.OrdinalIgnoreCase);
+        }
+
+        private static void PushNavigationState(Stack<NavigationState> history,
+            NavigationState state)
+        {
+            if (history == null || state == null) return;
+            history.Push(state);
+            if (history.Count <= 64) return;
+            NavigationState[] newestFirst = history.ToArray();
+            history.Clear();
+            for (int index = Math.Min(64, newestFirst.Length) - 1;
+                 index >= 0; index--)
+                history.Push(newestFirst[index]);
+        }
+
         private void RenderEntries()
         {
             if (itemsPanel == null) return;
             resettingEntries = true;
+            unchecked { iconLoadGeneration++; }
             try
             {
                 itemsPanel.Children.Clear();
                 loadHint = null;
                 currentEntries = new List<MenuEntry>();
+                currentSoftwareGroup = null;
                 renderedEntryCount = 0;
+                softwareSelectionText = null;
+                softwareCloseSelectedButton = null;
                 listScroll.ScrollToTop();
                 if (string.Equals(selectedCategory, CategoryNames.Lab,
                     StringComparison.OrdinalIgnoreCase))
                 {
                     RenderLab();
+                    return;
+                }
+                if (string.Equals(selectedCategory, CategoryNames.Software,
+                    StringComparison.OrdinalIgnoreCase))
+                {
+                    RenderSoftwareZone();
                     return;
                 }
                 string query = searchBox == null ? "" : (searchBox.Text ?? "").Trim();
@@ -709,7 +988,14 @@ namespace RightClickGuardian
                 }
                 AppendNextEntryBatch(true);
             }
-            finally { resettingEntries = false; }
+            finally
+            {
+                resettingEntries = false;
+                Dispatcher.BeginInvoke(new Action(delegate
+                {
+                    if (listScroll != null) listScroll.ScrollToTop();
+                }), DispatcherPriority.Loaded);
+            }
         }
 
         private void OnListScrollChanged(object sender, ScrollChangedEventArgs e)
@@ -717,7 +1003,10 @@ namespace RightClickGuardian
             if (resettingEntries || appendingEntries || e.VerticalChange <= 0 ||
                 renderedEntryCount >= currentEntries.Count ||
                 string.Equals(selectedCategory, CategoryNames.Lab,
-                    StringComparison.OrdinalIgnoreCase)) return;
+                    StringComparison.OrdinalIgnoreCase) ||
+                string.Equals(selectedCategory, CategoryNames.Software,
+                    StringComparison.OrdinalIgnoreCase) &&
+                    string.IsNullOrWhiteSpace(selectedSoftwareKey)) return;
             if (listScroll.VerticalOffset + listScroll.ViewportHeight >=
                 listScroll.ExtentHeight - 420)
             {
@@ -741,7 +1030,10 @@ namespace RightClickGuardian
                 int end = Math.Min(currentEntries.Count, renderedEntryCount + batchSize);
                 for (int index = renderedEntryCount; index < end; index++)
                 {
-                    Border card = BuildEntryCard(currentEntries[index]);
+                    bool softwareDetail = string.Equals(selectedCategory,
+                        CategoryNames.Software, StringComparison.OrdinalIgnoreCase) &&
+                        !string.IsNullOrWhiteSpace(selectedSoftwareKey);
+                    Border card = BuildEntryCard(currentEntries[index], softwareDetail);
                     itemsPanel.Children.Add(card);
                     int animationIndex = index - renderedEntryCount;
                     if (firstBatch && animationIndex < 10)
@@ -768,8 +1060,19 @@ namespace RightClickGuardian
         private void UpdateIncrementalLoadUi()
         {
             int remaining = currentEntries.Count - renderedEntryCount;
-            categorySubtitle.Text = "共 " + currentEntries.Count + " 项，已加载 " +
-                                    renderedEntryCount + " 项；关闭后由后台守卫持续压制";
+            if (currentSoftwareGroup != null)
+            {
+                int protectedCount = currentSoftwareGroup.Entries.Count(entry =>
+                    entry.Protected);
+                categorySubtitle.Text = currentSoftwareGroup.Name + " 共 " +
+                    currentSoftwareGroup.Entries.Count + " 个右键功能，已守护 " +
+                    protectedCount + " 个；当前加载 " + renderedEntryCount + " 个";
+            }
+            else
+            {
+                categorySubtitle.Text = "共 " + currentEntries.Count + " 项，已加载 " +
+                                        renderedEntryCount + " 项；关闭后由后台守卫持续压制";
+            }
             if (remaining <= 0)
             {
                 loadHint = null;
@@ -782,6 +1085,396 @@ namespace RightClickGuardian
             loadHint.HorizontalAlignment = HorizontalAlignment.Center;
             loadHint.Margin = new Thickness(0, 10, 0, 18);
             itemsPanel.Children.Add(loadHint);
+        }
+
+        private void RenderSoftwareZone()
+        {
+            string query = searchBox == null ? "" : (searchBox.Text ?? "").Trim();
+            List<SoftwareGroup> groups = GetSoftwareGroups();
+            if (string.IsNullOrWhiteSpace(selectedSoftwareKey))
+            {
+                IEnumerable<SoftwareGroup> filtered = groups;
+                if (!string.IsNullOrWhiteSpace(query))
+                {
+                    filtered = filtered.Where(group =>
+                        Contains(group.Name, query) ||
+                        Contains(group.Abbreviation, query) ||
+                        group.Entries.Any(entry =>
+                            Contains(FriendlyDisplayName(entry), query) ||
+                            Contains(entry.Source, query)));
+                }
+                List<SoftwareGroup> visible = filtered.ToList();
+                categoryTitle.Text = "软件专区";
+                categorySubtitle.Text = "按软件整理右键功能；点击图标进入，可整组或选择关闭";
+                if (visible.Count == 0)
+                {
+                    itemsPanel.Children.Add(BuildEmptyState());
+                    return;
+                }
+                WrapPanel cards = new WrapPanel();
+                cards.Margin = new Thickness(0, 5, 0, 12);
+                foreach (SoftwareGroup group in visible)
+                    cards.Children.Add(BuildSoftwareCard(group));
+                itemsPanel.Children.Add(cards);
+                return;
+            }
+
+            currentSoftwareGroup = groups.FirstOrDefault(group =>
+                string.Equals(group.Key, selectedSoftwareKey,
+                    StringComparison.OrdinalIgnoreCase));
+            if (currentSoftwareGroup == null)
+            {
+                selectedSoftwareKey = "";
+                selectedSoftwareEntryIds.Clear();
+                RenderSoftwareZone();
+                return;
+            }
+
+            categoryTitle.Text = currentSoftwareGroup.Name;
+            categorySubtitle.Text = "可以勾选多个功能关闭，也可以一键关闭该软件全部";
+            itemsPanel.Children.Add(BuildSoftwareDetailHeader(currentSoftwareGroup));
+            IEnumerable<MenuEntry> functions = currentSoftwareGroup.Entries;
+            if (!string.IsNullOrWhiteSpace(query))
+            {
+                functions = functions.Where(entry =>
+                    Contains(FriendlyDisplayName(entry), query) ||
+                    Contains(entry.Source, query) ||
+                    Contains(entry.Details, query));
+            }
+            currentEntries = functions.ToList();
+            if (currentEntries.Count == 0)
+            {
+                itemsPanel.Children.Add(BuildEmptyState());
+                return;
+            }
+            AppendNextEntryBatch(true);
+            UpdateSoftwareSelectionUi();
+        }
+
+        private Button BuildSoftwareCard(SoftwareGroup group)
+        {
+            Button card = RoundedButton("", Surface, Ink, 18);
+            card.Width = 258;
+            card.Height = 112;
+            card.Padding = new Thickness(14, 12, 14, 12);
+            card.Margin = new Thickness(0, 0, 12, 12);
+            card.HorizontalContentAlignment = HorizontalAlignment.Stretch;
+            card.VerticalContentAlignment = VerticalAlignment.Stretch;
+            card.Tag = group;
+
+            Grid content = new Grid();
+            content.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(68) });
+            content.ColumnDefinitions.Add(new ColumnDefinition
+                { Width = new GridLength(1, GridUnitType.Star) });
+            content.Children.Add(BuildSoftwareIcon(group, 56));
+
+            StackPanel words = new StackPanel();
+            words.VerticalAlignment = VerticalAlignment.Center;
+            Grid.SetColumn(words, 1);
+            TextBlock name = new TextBlock();
+            name.Text = group.Name;
+            name.FontSize = 14;
+            name.FontWeight = FontWeights.SemiBold;
+            name.Foreground = new SolidColorBrush(Ink);
+            name.TextTrimming = TextTrimming.CharacterEllipsis;
+            words.Children.Add(name);
+            int protectedCount = group.Entries.Count(entry => entry.Protected);
+            TextBlock count = new TextBlock();
+            count.Text = group.Entries.Count + " 个功能 · " + protectedCount + " 个已关闭";
+            count.Foreground = new SolidColorBrush(Muted);
+            count.FontSize = 10;
+            count.Margin = new Thickness(0, 6, 0, 0);
+            words.Children.Add(count);
+            TextBlock enter = new TextBlock();
+            enter.Text = "进入管理  ›";
+            enter.Foreground = new SolidColorBrush(AccentDark);
+            enter.FontSize = 10.5;
+            enter.Margin = new Thickness(0, 8, 0, 0);
+            words.Children.Add(enter);
+            content.Children.Add(words);
+            card.Content = content;
+            card.Click += delegate
+            {
+                NavigateTo(CategoryNames.Software, group.Key);
+            };
+            return card;
+        }
+
+        private UIElement BuildSoftwareIcon(SoftwareGroup group, double size)
+        {
+            Grid holder = new Grid();
+            holder.Width = size + 6;
+            holder.Height = size + 6;
+            holder.HorizontalAlignment = HorizontalAlignment.Left;
+            holder.VerticalAlignment = VerticalAlignment.Center;
+
+            Border tile = new Border();
+            tile.Width = size;
+            tile.Height = size;
+            tile.CornerRadius = new CornerRadius(17);
+            tile.Background = new LinearGradientBrush(
+                new GradientStopCollection
+                {
+                    new GradientStop(Color.FromRgb(255, 239, 245), 0),
+                    new GradientStop(Color.FromRgb(243, 239, 249), 1)
+                }, 45);
+            TextBlock letters = new TextBlock();
+            letters.Text = group.Abbreviation;
+            letters.FontSize = group.Abbreviation.Length > 2 ? 12 : 16;
+            letters.FontWeight = FontWeights.Bold;
+            letters.Foreground = new SolidColorBrush(AccentDark);
+            letters.HorizontalAlignment = HorizontalAlignment.Center;
+            letters.VerticalAlignment = VerticalAlignment.Center;
+            tile.Child = letters;
+            if (group.IconEntry != null)
+                QueueIconLoad(tile, group.IconEntry, size - 19,
+                    iconLoadGeneration);
+            holder.Children.Add(tile);
+
+            Border abbreviation = new Border();
+            abbreviation.Background = new SolidColorBrush(Accent);
+            abbreviation.CornerRadius = new CornerRadius(7);
+            abbreviation.Padding = new Thickness(5, 2, 5, 2);
+            abbreviation.HorizontalAlignment = HorizontalAlignment.Right;
+            abbreviation.VerticalAlignment = VerticalAlignment.Bottom;
+            TextBlock shortName = new TextBlock();
+            shortName.Text = group.Abbreviation;
+            shortName.Foreground = Brushes.White;
+            shortName.FontSize = 7.8;
+            shortName.FontWeight = FontWeights.Bold;
+            abbreviation.Child = shortName;
+            holder.Children.Add(abbreviation);
+            return holder;
+        }
+
+        private List<SoftwareGroup> GetSoftwareGroups()
+        {
+            if (softwareGroupsCache == null)
+                softwareGroupsCache = SoftwareCatalog.Build(allEntries);
+            return softwareGroupsCache;
+        }
+
+        private void QueueIconLoad(Border tile, MenuEntry entry,
+            double size, int generation)
+        {
+            if (tile == null || entry == null ||
+                string.IsNullOrWhiteSpace(entry.IconHint) &&
+                string.IsNullOrWhiteSpace(entry.FilePath)) return;
+            ImageSource cached;
+            if (IconResolver.TryGetCached(entry, out cached))
+            {
+                if (cached != null) SetResolvedIcon(tile, cached, size);
+                return;
+            }
+            IconResolver.ResolveAsync(entry).ContinueWith(delegate(Task<ImageSource> task)
+            {
+                if (task.IsCanceled || task.IsFaulted || task.Result == null) return;
+                ImageSource source = task.Result;
+                try
+                {
+                    Dispatcher.BeginInvoke(new Action(delegate
+                    {
+                        if (generation != iconLoadGeneration || tile == null) return;
+                        SetResolvedIcon(tile, source, size);
+                    }), DispatcherPriority.Background);
+                }
+                catch { }
+            });
+        }
+
+        private static void SetResolvedIcon(Border tile, ImageSource source,
+            double size)
+        {
+            Image image = new Image();
+            image.Source = source;
+            image.Width = size;
+            image.Height = size;
+            image.Stretch = Stretch.Uniform;
+            tile.Child = image;
+        }
+
+        private UIElement BuildSoftwareDetailHeader(SoftwareGroup group)
+        {
+            Border header = new Border();
+            header.Background = new SolidColorBrush(Color.FromRgb(255, 237, 244));
+            header.CornerRadius = new CornerRadius(20);
+            header.Padding = new Thickness(17, 14, 17, 14);
+            header.Margin = new Thickness(0, 5, 0, 12);
+
+            Grid root = new Grid();
+            root.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(70) });
+            root.ColumnDefinitions.Add(new ColumnDefinition
+                { Width = new GridLength(1, GridUnitType.Star) });
+            root.Children.Add(BuildSoftwareIcon(group, 56));
+
+            StackPanel content = new StackPanel();
+            Grid.SetColumn(content, 1);
+            Grid top = new Grid();
+            top.ColumnDefinitions.Add(new ColumnDefinition
+                { Width = new GridLength(1, GridUnitType.Star) });
+            top.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
+            StackPanel title = new StackPanel();
+            TextBlock name = new TextBlock();
+            name.Text = group.Name + " · " + group.Abbreviation;
+            name.FontSize = 15;
+            name.FontWeight = FontWeights.SemiBold;
+            title.Children.Add(name);
+            softwareSelectionText = new TextBlock();
+            softwareSelectionText.Foreground = new SolidColorBrush(Muted);
+            softwareSelectionText.FontSize = 10;
+            softwareSelectionText.Margin = new Thickness(0, 4, 0, 0);
+            title.Children.Add(softwareSelectionText);
+            top.Children.Add(title);
+            Button back = RoundedButton("← 返回软件列表",
+                Color.FromRgb(248, 218, 230), AccentDark, 11);
+            back.Height = 32;
+            back.Click += delegate
+            {
+                NavigateTo(CategoryNames.Software, "");
+            };
+            Grid.SetColumn(back, 1);
+            top.Children.Add(back);
+            content.Children.Add(top);
+
+            StackPanel actions = new StackPanel();
+            actions.Orientation = Orientation.Horizontal;
+            actions.Margin = new Thickness(0, 11, 0, 0);
+            Button selectAll = RoundedButton("☑ 全选可关闭",
+                Color.FromRgb(248, 218, 230), AccentDark, 11);
+            selectAll.Height = 32;
+            selectAll.Click += delegate
+            {
+                foreach (MenuEntry entry in group.Entries.Where(item => !item.Protected))
+                    selectedSoftwareEntryIds.Add(entry.Id);
+                RenderEntries();
+            };
+            actions.Children.Add(selectAll);
+            Button clear = RoundedButton("清空选择",
+                Color.FromRgb(246, 237, 241), Muted, 11);
+            clear.Height = 32;
+            clear.Margin = new Thickness(8, 0, 0, 0);
+            clear.Click += delegate
+            {
+                selectedSoftwareEntryIds.Clear();
+                RenderEntries();
+            };
+            actions.Children.Add(clear);
+            softwareCloseSelectedButton = RoundedButton("关闭已选",
+                Color.FromRgb(255, 230, 239), Color.FromRgb(181, 65, 112), 11);
+            softwareCloseSelectedButton.Height = 32;
+            softwareCloseSelectedButton.Margin = new Thickness(8, 0, 0, 0);
+            softwareCloseSelectedButton.Click += async delegate
+            {
+                List<MenuEntry> selected = group.Entries.Where(entry =>
+                    selectedSoftwareEntryIds.Contains(entry.Id)).ToList();
+                await CloseSoftwareEntriesAsync(group, selected,
+                    softwareCloseSelectedButton, "已选功能");
+            };
+            actions.Children.Add(softwareCloseSelectedButton);
+            Button closeAll = RoundedButton("一键关闭全部", Accent, Colors.White, 11);
+            closeAll.Height = 32;
+            closeAll.Margin = new Thickness(8, 0, 0, 0);
+            closeAll.Click += async delegate
+            {
+                await CloseSoftwareEntriesAsync(group, group.Entries,
+                    closeAll, group.Name + " 全部功能");
+            };
+            actions.Children.Add(closeAll);
+            content.Children.Add(actions);
+            root.Children.Add(content);
+            header.Child = root;
+            return header;
+        }
+
+        private void UpdateSoftwareSelectionUi()
+        {
+            if (softwareSelectionText == null) return;
+            int selected = currentSoftwareGroup == null ? 0 :
+                currentSoftwareGroup.Entries.Count(entry =>
+                    selectedSoftwareEntryIds.Contains(entry.Id) && !entry.Protected);
+            int protectedCount = currentSoftwareGroup == null ? 0 :
+                currentSoftwareGroup.Entries.Count(entry => entry.Protected);
+            softwareSelectionText.Text = "已选 " + selected + " 个 · 已守护 " +
+                                         protectedCount + " 个";
+            if (softwareCloseSelectedButton != null)
+                softwareCloseSelectedButton.IsEnabled = selected > 0;
+        }
+
+        private async Task CloseSoftwareEntriesAsync(SoftwareGroup group,
+            IEnumerable<MenuEntry> requested, Button button, string operationName)
+        {
+            List<MenuEntry> targets = (requested ?? Enumerable.Empty<MenuEntry>())
+                .Where(entry => !entry.Protected)
+                .GroupBy(SoftwareCatalog.ControlKey, StringComparer.OrdinalIgnoreCase)
+                .Select(items => items.First()).ToList();
+            if (targets.Count == 0)
+            {
+                SetStatus("没有需要关闭的项目", true);
+                UpdateSoftwareSelectionUi();
+                return;
+            }
+
+            int critical = targets.Count(entry => entry.IsCritical && entry.Enabled);
+            if (critical > 0)
+            {
+                MessageBoxResult answer = MessageBox.Show(this,
+                    "所选项目中有 " + critical + " 个系统核心入口。\n\n" +
+                    "批量关闭可能影响常用操作，仍要继续吗？",
+                    "确认批量关闭", MessageBoxButton.YesNo, MessageBoxImage.Warning);
+                if (answer != MessageBoxResult.Yes) return;
+            }
+
+            button.IsEnabled = false;
+            string oldText = Convert.ToString(button.Content);
+            button.Content = "正在关闭 " + targets.Count + " 项…";
+            List<MenuEntry> completed = new List<MenuEntry>();
+            List<string> errors = new List<string>();
+            await Task.Run(delegate
+            {
+                foreach (MenuEntry entry in targets)
+                {
+                    try
+                    {
+                        if (entry.Enabled) enforcement.Disable(entry);
+                        else enforcement.AdoptDisabled(entry);
+                        completed.Add(entry);
+                    }
+                    catch (Exception ex)
+                    {
+                        errors.Add(FriendlyDisplayName(entry) + "：" + ex.Message);
+                    }
+                }
+            });
+
+            foreach (MenuEntry entry in completed)
+            {
+                entry.Enabled = false;
+                entry.Protected = true;
+                selectedSoftwareEntryIds.Remove(entry.Id);
+            }
+            try
+            {
+                TaskSchedulerManager.Install();
+                TaskSchedulerManager.StartGuardNow();
+            }
+            catch { }
+
+            UpdateCounts();
+            if (errors.Count == 0)
+            {
+                SetStatus(operationName + "已关闭 " + completed.Count +
+                          " 项，强制守护已接管", true);
+            }
+            else
+            {
+                SetStatus("已关闭 " + completed.Count + " 项，" +
+                          errors.Count + " 项失败", false);
+                MessageBox.Show(this, string.Join("\n", errors.Take(12).ToArray()),
+                    "部分项目没有完成", MessageBoxButton.OK, MessageBoxImage.Warning);
+            }
+            button.Content = oldText;
+            button.IsEnabled = true;
+            RenderEntries();
         }
 
         private void RenderLab()
@@ -982,7 +1675,7 @@ namespace RightClickGuardian
             sampleIcon.Height = 72;
             sampleIcon.CornerRadius = new CornerRadius(24);
             sampleIcon.Background = new LinearGradientBrush(
-                Color.FromRgb(239, 238, 255), Color.FromRgb(255, 235, 244), 45);
+                Color.FromRgb(244, 236, 249), Color.FromRgb(255, 230, 239), 45);
             sampleIcon.HorizontalAlignment = HorizontalAlignment.Left;
             TextBlock sampleGlyph = new TextBlock();
             sampleGlyph.Text = selectedLabSample.Icon;
@@ -1032,7 +1725,7 @@ namespace RightClickGuardian
             info.Children.Add(explorerButton);
             TextBlock privacy = new TextBlock();
             privacy.Text = "测试文件为空白样本，仅保存在本机实验室目录。";
-            privacy.Foreground = new SolidColorBrush(Color.FromRgb(157, 161, 181));
+            privacy.Foreground = new SolidColorBrush(Color.FromRgb(157, 136, 151));
             privacy.FontSize = 9;
             privacy.Margin = new Thickness(0, 10, 0, 0);
             info.Children.Add(privacy);
@@ -1055,6 +1748,11 @@ namespace RightClickGuardian
 
         private Border BuildEntryCard(MenuEntry entry)
         {
+            return BuildEntryCard(entry, false);
+        }
+
+        private Border BuildEntryCard(MenuEntry entry, bool selectable)
+        {
             Border card = new Border();
             card.Background = new SolidColorBrush(Surface);
             card.BorderBrush = new SolidColorBrush(Line);
@@ -1067,6 +1765,8 @@ namespace RightClickGuardian
 
             Grid row = new Grid();
             row.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(5) });
+            row.ColumnDefinitions.Add(new ColumnDefinition
+                { Width = new GridLength(selectable ? 34 : 0) });
             row.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(53) });
             row.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });
             row.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
@@ -1080,38 +1780,46 @@ namespace RightClickGuardian
             accent.Margin = new Thickness(0, 1, 0, 1);
             row.Children.Add(accent);
 
+            if (selectable)
+            {
+                if (entry.Protected) selectedSoftwareEntryIds.Remove(entry.Id);
+                CheckBox selection = new CheckBox();
+                selection.IsChecked = selectedSoftwareEntryIds.Contains(entry.Id);
+                selection.IsEnabled = !entry.Protected;
+                selection.VerticalAlignment = VerticalAlignment.Center;
+                selection.HorizontalAlignment = HorizontalAlignment.Center;
+                selection.ToolTip = entry.Protected ? "已经由守护关闭" : "选择后可批量关闭";
+                selection.Click += delegate
+                {
+                    if (selection.IsChecked == true)
+                        selectedSoftwareEntryIds.Add(entry.Id);
+                    else selectedSoftwareEntryIds.Remove(entry.Id);
+                    UpdateSoftwareSelectionUi();
+                };
+                Grid.SetColumn(selection, 1);
+                row.Children.Add(selection);
+            }
+
             Border iconTile = new Border();
             iconTile.Width = 40;
             iconTile.Height = 40;
             iconTile.CornerRadius = new CornerRadius(13);
-            iconTile.Background = new SolidColorBrush(Color.FromRgb(245, 245, 252));
+            iconTile.Background = new SolidColorBrush(Color.FromRgb(252, 241, 245));
             iconTile.VerticalAlignment = VerticalAlignment.Center;
             iconTile.HorizontalAlignment = HorizontalAlignment.Center;
-            ImageSource resolvedIcon = IconResolver.Resolve(entry);
-            if (resolvedIcon != null)
-            {
-                Image iconImage = new Image();
-                iconImage.Source = resolvedIcon;
-                iconImage.Width = 25;
-                iconImage.Height = 25;
-                iconImage.Stretch = Stretch.Uniform;
-                iconTile.Child = iconImage;
-            }
-            else
-            {
-                TextBlock fallbackIcon = new TextBlock();
-                fallbackIcon.Text = CategoryIcon(entry.Category);
-                fallbackIcon.FontSize = 18;
-                fallbackIcon.HorizontalAlignment = HorizontalAlignment.Center;
-                fallbackIcon.VerticalAlignment = VerticalAlignment.Center;
-                iconTile.Child = fallbackIcon;
-            }
-            Grid.SetColumn(iconTile, 1);
+            TextBlock fallbackIcon = new TextBlock();
+            fallbackIcon.Text = CategoryIcon(entry.Category);
+            fallbackIcon.FontSize = 18;
+            fallbackIcon.HorizontalAlignment = HorizontalAlignment.Center;
+            fallbackIcon.VerticalAlignment = VerticalAlignment.Center;
+            iconTile.Child = fallbackIcon;
+            QueueIconLoad(iconTile, entry, 25, iconLoadGeneration);
+            Grid.SetColumn(iconTile, 2);
             row.Children.Add(iconTile);
 
             StackPanel text = new StackPanel();
             text.Margin = new Thickness(10, 0, 12, 0);
-            Grid.SetColumn(text, 2);
+            Grid.SetColumn(text, 3);
             StackPanel titleRow = new StackPanel();
             titleRow.Orientation = Orientation.Horizontal;
             TextBlock name = new TextBlock();
@@ -1151,7 +1859,7 @@ namespace RightClickGuardian
             toggle.Tag = entry;
             toggle.VerticalAlignment = VerticalAlignment.Center;
             toggle.Click += async delegate { await ToggleEntryAsync(entry, toggle); };
-            Grid.SetColumn(toggle, 3);
+            Grid.SetColumn(toggle, 4);
             row.Children.Add(toggle);
             return card;
         }
@@ -1182,6 +1890,7 @@ namespace RightClickGuardian
                 {
                     entry.Enabled = false;
                     entry.Protected = true;
+                    selectedSoftwareEntryIds.Remove(entry.Id);
                     SetStatus("已强制关闭“" + entry.Name + "”，守护正在盯着它", true);
                 }
                 else
@@ -1216,7 +1925,11 @@ namespace RightClickGuardian
                 Border card = itemsPanel.Children[index] as Border;
                 if (card == null || !object.ReferenceEquals(card.Tag, entry)) continue;
                 itemsPanel.Children.RemoveAt(index);
-                itemsPanel.Children.Insert(index, BuildEntryCard(entry));
+                bool softwareDetail = string.Equals(selectedCategory,
+                    CategoryNames.Software, StringComparison.OrdinalIgnoreCase) &&
+                    !string.IsNullOrWhiteSpace(selectedSoftwareKey);
+                itemsPanel.Children.Insert(index, BuildEntryCard(entry, softwareDetail));
+                UpdateSoftwareSelectionUi();
                 return;
             }
             RenderEntries();
@@ -1232,11 +1945,33 @@ namespace RightClickGuardian
             empty.Padding = new Thickness(30);
             empty.Margin = new Thickness(0, 8, 0, 0);
             StackPanel words = new StackPanel();
-            TextBlock cat = new TextBlock();
-            cat.Text = "ฅ^•ﻌ•^ฅ";
-            cat.FontSize = 30;
-            cat.HorizontalAlignment = HorizontalAlignment.Center;
-            words.Children.Add(cat);
+            Border portrait = new Border();
+            portrait.Width = 64;
+            portrait.Height = 64;
+            portrait.CornerRadius = new CornerRadius(22);
+            portrait.BorderBrush = new SolidColorBrush(
+                Color.FromRgb(245, 190, 209));
+            portrait.BorderThickness = new Thickness(1);
+            portrait.HorizontalAlignment = HorizontalAlignment.Center;
+            if (ThemeAssets.MascotPortrait != null)
+            {
+                ImageBrush image = new ImageBrush(
+                    ThemeAssets.MascotPortrait);
+                image.Stretch = Stretch.UniformToFill;
+                portrait.Background = image;
+            }
+            else
+            {
+                portrait.Background = new SolidColorBrush(
+                    Color.FromRgb(255, 230, 239));
+                TextBlock heart = new TextBlock();
+                heart.Text = "♡";
+                heart.FontSize = 30;
+                heart.HorizontalAlignment = HorizontalAlignment.Center;
+                heart.VerticalAlignment = VerticalAlignment.Center;
+                portrait.Child = heart;
+            }
+            words.Children.Add(portrait);
             TextBlock title = new TextBlock();
             title.Text = scanning ? "还在认真翻找中…" : "没有找到匹配项";
             title.FontSize = 14;
@@ -1259,6 +1994,9 @@ namespace RightClickGuardian
         {
             if (navCounts.ContainsKey(""))
                 navCounts[""].Text = allEntries.Count.ToString();
+            TextBlock softwareCount;
+            if (navCounts.TryGetValue(CategoryNames.Software, out softwareCount))
+                softwareCount.Text = GetSoftwareGroups().Count.ToString();
             foreach (string category in CategoryNames.Ordered)
             {
                 TextBlock count;
@@ -1345,7 +2083,7 @@ namespace RightClickGuardian
                 bool selected = string.Equals(pair.Key, selectedCategory,
                     StringComparison.OrdinalIgnoreCase);
                 pair.Value.Background = new SolidColorBrush(selected
-                    ? Color.FromRgb(238, 237, 255) : Colors.Transparent);
+                    ? Color.FromRgb(255, 228, 238) : Colors.Transparent);
                 pair.Value.Foreground = new SolidColorBrush(selected ? AccentDark : Ink);
                 pair.Value.FontWeight = selected ? FontWeights.SemiBold : FontWeights.Normal;
             }
@@ -1457,6 +2195,13 @@ namespace RightClickGuardian
         private static string FriendlyDisplayName(MenuEntry entry)
         {
             string value = string.IsNullOrWhiteSpace(entry.Name) ? "" : entry.Name.Trim();
+            if (entry.Kind == EntryKind.ShellNew && value.StartsWith("."))
+            {
+                int separator = value.IndexOf(" ·", StringComparison.Ordinal);
+                string extension = separator > 0 ? value.Substring(0, separator) : value;
+                if (extension.Length <= 12)
+                    return "新建 " + extension.TrimStart('.').ToUpperInvariant() + " 文件";
+            }
             Guid ignored;
             if (Guid.TryParse(value.Trim('{', '}'), out ignored))
             {
@@ -1521,6 +2266,7 @@ namespace RightClickGuardian
             if (category == CategoryNames.RecycleBin) return "♻";
             if (category == CategoryNames.ImageMedia) return "🖼";
             if (category == CategoryNames.ModernApps) return "▦";
+            if (category == CategoryNames.Software) return "▦";
             if (category == CategoryNames.NewMenu) return "＋";
             if (category == CategoryNames.SendTo) return "➤";
             if (category == CategoryNames.OpenWith) return "↗";

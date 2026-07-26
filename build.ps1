@@ -52,7 +52,9 @@ $arguments = @(
     '/codepage:65001',
     ('/out:' + $application),
     ('/win32manifest:' + (Join-Path $sourceRoot 'app.manifest')),
-    ('/win32icon:' + (Join-Path $sourceRoot 'RightClickGuardian.ico'))
+    ('/win32icon:' + (Join-Path $sourceRoot 'RightClickGuardian.ico')),
+    ('/resource:' + (Join-Path $sourceRoot 'ThemeMascot.png') +
+        ',RightClickGuardian.ThemeMascot.png')
 ) + $references + $sources
 
 & $compiler @arguments
@@ -109,6 +111,30 @@ function Build-TestHarness {
 
 Build-TestHarness 'IntegrationHarness' @()
 Build-TestHarness 'ScanHarness' @()
+Build-TestHarness 'SoftwareCatalogHarness' @()
+Build-TestHarness 'NavigationHarness' @(
+    'PresentationCore.dll',
+    'PresentationFramework.dll',
+    'WindowsBase.dll',
+    'System.Xaml.dll'
+)
+Build-TestHarness 'TrayVisualHarness' @(
+    'System.Drawing.dll',
+    'System.Windows.Forms.dll'
+)
+Build-TestHarness 'ThemeAssetHarness' @(
+    'System.Drawing.dll',
+    'PresentationCore.dll',
+    'PresentationFramework.dll',
+    'WindowsBase.dll',
+    'System.Xaml.dll'
+)
+Build-TestHarness 'ThemeSnapshotHarness' @(
+    'PresentationCore.dll',
+    'PresentationFramework.dll',
+    'WindowsBase.dll',
+    'System.Xaml.dll'
+)
 Build-TestHarness 'UiPerformanceHarness' @(
     'PresentationCore.dll',
     'PresentationFramework.dll',

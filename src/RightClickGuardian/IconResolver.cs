@@ -3,6 +3,8 @@ using System.Collections.Generic;
 using System.IO;
 using System.Runtime.InteropServices;
 using System.Text.RegularExpressions;
+using System.Threading;
+using System.Threading.Tasks;
 using System.Windows;
 using System.Windows.Interop;
 using System.Windows.Media;
@@ -21,6 +23,8 @@ namespace RightClickGuardian
             new Dictionary<string, ImageSource>(StringComparer.OrdinalIgnoreCase);
         private static readonly HashSet<string> Missing =
             new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+        private static readonly SemaphoreSlim ResolveGate =
+            new SemaphoreSlim(3, 3);
 
         [StructLayout(LayoutKind.Sequential, CharSet = CharSet.Unicode)]
         private struct SHFILEINFO
@@ -50,10 +54,7 @@ namespace RightClickGuardian
         {
             if (entry == null) return null;
             string hint = entry.IconHint ?? "";
-            string normalizedHint = CleanPath(hint);
-            string cacheKey = !string.IsNullOrWhiteSpace(normalizedHint)
-                ? normalizedHint + "#" + ParseIconIndex(hint) :
-                !string.IsNullOrWhiteSpace(entry.FilePath) ? entry.FilePath : "";
+            string cacheKey = CacheKey(entry);
             if (!string.IsNullOrWhiteSpace(cacheKey))
             {
                 lock (CacheSync)
@@ -91,6 +92,45 @@ namespace RightClickGuardian
                 }
             }
             return resolved;
+        }
+
+        public static bool TryGetCached(MenuEntry entry, out ImageSource icon)
+        {
+            icon = null;
+            string cacheKey = CacheKey(entry);
+            if (string.IsNullOrWhiteSpace(cacheKey)) return false;
+            lock (CacheSync)
+            {
+                if (Cache.TryGetValue(cacheKey, out icon)) return true;
+                return Missing.Contains(cacheKey);
+            }
+        }
+
+        public static async Task<ImageSource> ResolveAsync(MenuEntry entry)
+        {
+            ImageSource cached;
+            if (TryGetCached(entry, out cached)) return cached;
+            await ResolveGate.WaitAsync().ConfigureAwait(false);
+            try
+            {
+                if (TryGetCached(entry, out cached)) return cached;
+                return await Task.Run(delegate { return Resolve(entry); })
+                    .ConfigureAwait(false);
+            }
+            finally
+            {
+                ResolveGate.Release();
+            }
+        }
+
+        private static string CacheKey(MenuEntry entry)
+        {
+            if (entry == null) return "";
+            string hint = entry.IconHint ?? "";
+            string normalizedHint = CleanPath(hint);
+            return !string.IsNullOrWhiteSpace(normalizedHint)
+                ? normalizedHint + "#" + ParseIconIndex(hint) :
+                !string.IsNullOrWhiteSpace(entry.FilePath) ? entry.FilePath : "";
         }
 
         private static ImageSource FromBitmap(string path)

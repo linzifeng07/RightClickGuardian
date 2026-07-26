@@ -51,6 +51,9 @@
   </ItemGroup>
   <ItemGroup>
     <Content Include="RightClickGuardian.ico" />
+    <EmbeddedResource Include="ThemeMascot.png">
+      <LogicalName>RightClickGuardian.ThemeMascot.png</LogicalName>
+    </EmbeddedResource>
     <None Include="app.manifest" />
   </ItemGroup>
   <Import Project="$(MSBuildToolsPath)\Microsoft.CSharp.targets" />
